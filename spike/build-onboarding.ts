@@ -4,6 +4,7 @@
  *   npm run build:onboarding              dry run: reads only, prints every payload it WOULD send
  *   npm run build:onboarding -- --apply   really creates the objects (needs the .env safety switches)
  *   npm run build:onboarding -- --plan plans/other.json
+ *   npm run build:onboarding -- --fresh-templates          re-read templates from the instance
  *
  * Per step: reuse an existing object by name, create it from its template fixture, or update
  * an existing one with a partial POST; then read it back to verify. Re-running is safe: anything that already exists
@@ -20,12 +21,14 @@ import {
   saveJson,
   timestamp,
 } from './lib/halo.js';
+import { ensureTemplates } from './lib/discover.js';
 import { type Plan, type Refs, refsOf, translators } from './lib/translators.js';
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 const planIdx = args.indexOf('--plan');
 const planFile = planIdx >= 0 ? args[planIdx + 1] : 'plans/onboarding.json';
+const freshTemplates = args.includes('--fresh-templates');
 
 if (apply) assertWritesAllowed();
 
@@ -61,6 +64,11 @@ async function findByName(resource: string, name: string, key = 'name'): Promise
     [r[key], r.name, r.label, r.buttonname, r.outcome].some((v) => String(v ?? '').trim().toLowerCase() === want),
   );
 }
+
+// Read the instance: pick templates from THIS Halo for everything the plan creates (read-only).
+console.log(`Reading the instance for templates${freshTemplates ? ' (fresh)' : ''}:`);
+console.log((await ensureTemplates(plan.steps, { fresh: freshTemplates })).join('\n') || '  (nothing to create)');
+console.log('');
 
 // Pre-flight: everything the plan must FIND (reuse/update targets) has to exist before ANYTHING is written.
 // Rule S7 (2026-10-19): a run wrote two objects, then failed on a lookup it could have checked up front.

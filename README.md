@@ -41,17 +41,11 @@ npm run post -- TicketType fixtures/template-tickettype.json --name "Spike copy"
 # 4. Check the copy in the Halo UI. Log works / partial / blocked in NOTES.md
 ```
 
-Templates the builder needs in `spike/fixtures/` (copy them from captured fixtures, e.g. on Windows):
+Templates are **not** copied by hand any more. Before every build, the builder reads the connected instance and picks one of its own objects of each kind to copy the shape from (`spike/lib/discover.ts`), stored per instance under `spike/fixtures/templates/<host>/`. See what it reads with:
 
 ```powershell
-Copy-Item spike\fixtures\fieldinfo-141.json spike\fixtures\template-field.json
-Copy-Item spike\fixtures\fieldinfo-124.json spike\fixtures\template-field-dropdown.json
-Copy-Item spike\fixtures\sla-3.json spike\fixtures\template-sla.json
-Copy-Item spike\fixtures\approvalprocess-4.json spike\fixtures\template-approvalprocess.json
-Copy-Item spike\fixtures\tickettype-36.json spike\fixtures\template-tickettype.json
-Copy-Item spike\fixtures\workflow-9.json spike\fixtures\template-workflow.json
-Copy-Item spike\fixtures\outcome-11.json spike\fixtures\template-outcome.json
-Copy-Item spike\fixtures\status-28.json spike\fixtures\template-status.json
+npm run scan            # profile of the instance + which templates it will use (read-only)
+npm run scan -- --fresh # re-pick templates
 ```
 
 Every template is deep-cleaned before use (`spike/lib/clean.ts`): copied Halo objects carry nested ids that point at other records, and posting them unchanged can modify existing config.
@@ -78,6 +72,8 @@ spike/
 ├── get.ts               read any resource, save as fixture
 ├── post.ts              create a renamed copy of a fixture
 ├── bundle.ts            merge detail fixtures into one file to share
+├── scan.ts              read an instance: profile, data checks, templates
+├── lib/discover.ts      pick templates from the connected instance
 ├── build-onboarding.ts  run a plan in order: reuse, create, verify
 ├── plans/               plans (committed)
 ├── fixtures/            real Halo JSON (git-ignored)

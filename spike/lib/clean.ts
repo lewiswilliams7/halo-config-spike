@@ -17,7 +17,7 @@
  */
 
 const IDENTITY_KEYS = new Set(['id', 'guid', 'pk', 'published_id']);
-const PARENT_POINTER_KEYS = new Set(['rtid', 'slaid', 'processid', 'lookupid', 'entity_id', 'entity_id2', 'criteriagroup_id', 'flow_id', 'fdid']);
+const PARENT_POINTER_KEYS = new Set(['rtid', 'slaid', 'processid', 'lookupid', 'entity_id', 'entity_id2', 'criteriagroup_id', 'flow_id', 'fdid', 'team_id', 'cab_id']);
 const LINK_ARRAYS = new Set([
   'tickettypes', //   fieldinfo/status/outcome → ticket types it's attached to
   'workflows', //     outcome → workflows it's attached to (outcome-11 had 20)

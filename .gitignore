@@ -4,7 +4,7 @@ node_modules/
 !.env.example
 
 # Real data pulled from Halo stays local
-spike/fixtures/*.json
+spike/fixtures/**/*.json
 spike/runs/*.json
 !spike/fixtures/.gitkeep
 !spike/runs/.gitkeep

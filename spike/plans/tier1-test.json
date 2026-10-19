@@ -1,0 +1,19 @@
+{
+  "request": "Set up an Equipment Request ticket type for an Onboarding Team (Kaleem and Jennifer). It needs an Equipment Details section with a 'Laptop needed?' tick box and a multi-select of items (Monitor, Keyboard, Headset). Also create an Onboarding Approvers group with Jennifer in it.",
+  "steps": [
+    { "id": "ag_kaleem", "object": "agent", "action": "reuse", "match": { "name": "Kaleem Smith" } },
+    { "id": "ag_jennifer", "object": "agent", "action": "reuse", "match": { "name": "Jennifer Williams" } },
+    { "id": "team_onb", "object": "team", "action": "create", "name": "Onboarding Team", "members": ["ag_kaleem", "ag_jennifer"] },
+    { "id": "grp_onb", "object": "approval_group", "action": "create", "name": "Onboarding Approvers", "members": ["ag_jennifer"], "approvals_needed": 1 },
+    { "id": "f_laptop", "object": "field", "action": "create", "name": "CFEquipLaptopNeeded", "label": "Laptop needed?", "type": "checkbox" },
+    { "id": "f_items", "object": "field", "action": "create", "name": "CFEquipItems", "label": "Items", "type": "multiselect", "options": ["Monitor", "Keyboard", "Headset"] },
+    {
+      "id": "fg_equip",
+      "object": "field_group",
+      "action": "create",
+      "name": "Equipment Details",
+      "fields": [{ "ref": "f_laptop" }, { "ref": "f_items", "mandatory": true }]
+    },
+    { "id": "tt_equip", "object": "ticket_type", "action": "create", "name": "Equipment Request", "groups": ["fg_equip"], "team": "team_onb" }
+  ]
+}

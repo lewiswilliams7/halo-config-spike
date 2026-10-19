@@ -10,7 +10,8 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 
 | Area | Status | Notes |
 |---|---|---|
-| Custom fields (text, memo, date, dropdown, checkbox) | ✅ | Rules F1–F6. Multi-select untested |
+| Custom fields (text, memo, date, dropdown) | ✅ | Rules F1–F6 |
+| Custom fields (checkbox, multi-select) | 🧪 | `plans/tier1-test.json` |
 | Ticket types (fields, mandatory, team, SLA, approval, workflow) | ✅ | T1, T2 |
 | Statuses | ✅ | |
 | Actions (Outcomes) | ✅ | O1, O2. `systemid 0` still to confirm |
@@ -18,11 +19,11 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | SLAs (targets per priority) | ✅ | A1. Workdays reused, not created |
 | Approval processes: line manager | ✅ | P1 |
 | Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
-| Approval groups (CABs) | 🧪 | Reuse works via `/CAB`; create needs a template |
-| Teams | 🧪 | Reused so far, never created |
+| Approval groups (CABs) | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
+| Teams | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
 | Categories | ⬜ | `POST /Category` exists |
 | Priorities | ⬜ | Usually reused |
-| Field groups | ⬜ | `POST /FieldGroup` exists |
+| Field groups | 🧪 | Create + attach to ticket type coded (M1), `plans/tier1-test.json` |
 | Updating existing objects (any of the above) | ✅ | Partial updates proven safe (U0) |
 
 ## Tier 2: common, slightly bigger jobs
@@ -50,13 +51,21 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Portal layout and branding | ⬜ | |
 | AI / MCP configuration | ⬜ | |
 
+## Reading the customer's instance
+
+| Capability | Status | Notes |
+|---|---|---|
+| Profile: what exists (types, fields, workflows, people…) | 🧪 | `npm run scan` |
+| Templates picked from the instance itself, per instance | 🧪 | D1, D2 (`lib/discover.ts`). Test B proves it on a fresh trial |
+| Find existing objects by name before reusing/updating | ✅ | Pre-flight (S7, S8) |
+
 ## Pre-build checks (the "consultant" layer)
 
 Before building, check the customer's own data can support the plan, and suggest a fix when it can't.
 
 | Check | Why | Status |
 |---|---|---|
-| Line-manager approval → how many users have no manager? | Their approvals error (P4) | ⬜ |
+| Line-manager approval → how many users have no manager? | Their approvals error (P4) | 🧪 in `scan`, needs the real Users manager field confirmed |
 | Named agent / group approver → do they exist and are they active? | Approvals go nowhere | 🧪 pre-flight finds them |
 | New field name → clashes with an existing field? | Confusing duplicates | ⬜ |
 

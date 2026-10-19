@@ -30,6 +30,14 @@ export const env = {
   instanceLabel: process.env.HALO_INSTANCE_LABEL?.trim() ?? '',
 };
 
+/** Which Halo this is. Templates are stored per instance so one customer's never touch another's. */
+export const INSTANCE_KEY = new URL(env.apiUrl).hostname;
+
+/** Relative path (under spike/) of a template for THIS instance. */
+export function templateRel(file: string): string {
+  return `fixtures/templates/${INSTANCE_KEY}/${file}`;
+}
+
 // ---------- auth ----------
 
 let cached: { token: string; expiresAt: number; raw: Record<string, unknown> } | null = null;

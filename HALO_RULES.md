@@ -59,6 +59,10 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | O1 | Outcomes (actions) keep their name in `outcome` + `buttonname`, not `name`. `newstatus` = status id to move to. | Can't find or verify actions | `translators.ts` outcome `nameKey` |
 | O2 | Copied outcomes carry `workflows: [...]` (attach to every workflow), `systemid` (system behaviour) and `hotkey`. Strip/reset all three. | New action appears in 20 workflows; behaves like the template's system action | `clean.ts`, `translators.ts` outcome |
 
+| D1 | **Templates come from the connected instance, never another one.** Discovery picks a real object of each kind from the customer's own Halo and stores it per instance (`fixtures/templates/<host>/`). Another instance's templates carry its ids (workdays, lookups, statuses). | Wrong or dangling references on a customer's Halo | `lib/discover.ts`, `halo.ts templateRel` |
+| D2 | Pick templates by evidence: same field type with real values for lookups; a service-request ticket type (`itilrequesttype` 3); a plain status (not New/Closed); a non-system action (`systemid` 0); a plain approval process (types 1/3/10, not change CAB 42); workflows copied BY NAME (`copy_of`). | Inheriting the wrong behaviour from an odd template | `lib/discover.ts` |
+| M1 | Teams: members are `agents: [{ agent_id }]`. Approval groups (CAB): `members: [{ agent_id, type 0 }]`, `approvals_needed`; drop template `roles`. Field groups: `name`, `header`, `fields[]` rows; attach to a ticket type as a row with `groupid` and `fieldid 0`. Strip `team_id`/`cab_id` from copied rows. | Template's members copied into the new team/group | `translators.ts` |
+
 ## After a build
 
 | # | Rule | Without it |

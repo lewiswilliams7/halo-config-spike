@@ -10,7 +10,7 @@
  * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
 import { cleanForCreate } from './clean.js';
-import { fileExists, loadJson } from './halo.js';
+import { fileExists, loadJson, templateRel } from './halo.js';
 
 export const SPIKE_MAP = {
   /** FieldInfo.type. Evidence: fieldinfo-141 (text=0), -114 (memo=1), -124 (dropdown=2),
@@ -75,7 +75,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   label?: string;
@@ -100,6 +100,14 @@ export interface PlanStep {
     enter_via: string; //                      outcome ref: action on after_step that moves into the new step
     exits: { via: string; to_step: string }[]; // outcome refs: actions on the new step, to existing step names
   };
+  /** team / approval_group: agent refs. */
+  members?: string[];
+  /** approval_group: how many members must approve. */
+  approvals_needed?: number;
+  /** ticket_type: field group refs, added after the plain fields. */
+  groups?: string[];
+  /** workflow: name of an existing workflow on THIS instance to copy. */
+  copy_of?: string;
   /** approval_process: approval stages in order. Each stage is ONE of these (rule P1). */
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
@@ -134,14 +142,22 @@ export interface Translator {
 // ---------- helpers ----------
 
 function fromTemplate(file: string, resource: string): Record<string, unknown> {
-  if (!fileExists(`fixtures/${file}`)) {
-    throw new Error(
-      `Missing fixtures/${file}.\n` +
-        `  Run: npm run get -- ${resource} <id of a good example>\n` +
-        `  then copy the saved file to fixtures/${file} (see README).`,
-    );
+  // Templates come from the connected instance itself (lib/discover.ts), stored per instance.
+  const rel = templateRel(file);
+  if (!fileExists(rel)) {
+    throw new Error(`No ${resource} template for this instance (${rel}). Discovery should have found one; run npm run scan.`);
   }
-  return cleanForCreate(loadJson<Record<string, unknown>>(`fixtures/${file}`));
+  return cleanForCreate(loadJson<Record<string, unknown>>(rel));
+}
+
+/** Template file for a field of a given plan type ("text", "dropdown", ...). */
+export function fieldTemplateFile(type = 'text'): string {
+  return `template-field-${type}.json`;
+}
+
+/** Template file for "copy this named workflow". */
+export function workflowTemplateFile(copyOf?: string): string {
+  return copyOf ? `template-workflow--${copyOf.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.json` : 'template-workflow.json';
 }
 
 export const FIELD_SUMMARY_PLACEHOLDER = 'created by builder';
@@ -162,9 +178,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
   team: {
     resource: 'Team',
     template: 'template-team.json',
-    build: (step) => {
+    build: (step, refs) => {
+      // Evidence: team-6. Members are agents[] rows { agent_id }; the template's members are dropped.
       const p = fromTemplate('template-team.json', 'Team');
       p.name = step.name;
+      p.agents = (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id }));
+      p.managers = [];
       return p;
     },
   },
@@ -172,7 +191,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
   field: {
     // Ticket custom fields are FieldInfo. /Field is asset fields (NOTES.md, 2026-10-19).
     resource: 'FieldInfo',
-    template: 'template-field.json',
+    template: 'template-field-<type>.json',
     // Halo prefixes custom field names with "CF" itself: sending "CFx" stores "CFCFx" (2026-10-19, field 310).
     storedName: (step) => `CF${bareFieldName(step.name)}`,
     // Rule F6 (2026-10-19): a field created via the API only works fully (dropdown options show)
@@ -181,12 +200,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
     build: (step, _refs, warn) => {
       // Prefer a template of the same field type: each type carries its own defaults.
       // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
-      const typed = `template-field-${step.type}.json`;
-      const p = fromTemplate(fileExists(`fixtures/${typed}`) ? typed : 'template-field.json', 'FieldInfo');
+      const p = fromTemplate(fieldTemplateFile(step.type), 'FieldInfo');
       const m = SPIKE_MAP.field;
-      if (!fileExists(`fixtures/${typed}`) && step.type && step.type !== 'text') {
-        warn(`No fixtures/${typed}; using the text template, so ${step.type}-specific defaults may be wrong`);
-      }
       p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
@@ -277,12 +292,16 @@ export const translators: Record<PlanStep['object'], Translator> = {
 
   approval_group: {
     // Halo calls approval groups CABs. Evidence: GET /CAB lists "Human Resource Approval Group" etc.
-    // Reuse only for now; creating one needs a template fixture (GET /CAB/<id>).
     resource: 'CAB',
     template: 'template-cab.json',
-    build: (step) => {
+    build: (step, refs) => {
+      // Evidence: cab-4. members[] { agent_id, type 0 }; approvals_needed; template roles dropped.
       const p = fromTemplate('template-cab.json', 'CAB');
       p.name = step.name;
+      p.members = (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id, type: 0 }));
+      p.roles = [];
+      p.approvals_needed = step.approvals_needed ?? 1;
+      p.all_must_approve = false;
       return p;
     },
   },
@@ -329,7 +348,36 @@ export const translators: Record<PlanStep['object'], Translator> = {
           for (const key of m.mandatoryKeys ?? []) row[key] = level;
           return row;
         });
+        // Field groups attach as rows with groupid and fieldid 0 (evidence: tickettype-36 rows 10420/10424).
+        const offset = (step.fields ?? []).length;
+        for (const [i, g] of (step.groups ?? []).entries()) {
+          (p[m.fields] as Record<string, unknown>[]).push({
+            fieldid: 0, groupid: refs[g]?.id, seq: offset + i + 1, usage: 0,
+            endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1,
+          });
+        }
       }
+      return p;
+    },
+  },
+
+  field_group: {
+    // Evidence: fieldgroup-14. name + header; fields[] rows like a ticket type's, with mandatory 3/1.
+    resource: 'FieldGroup',
+    template: 'template-fieldgroup.json',
+    build: (step, refs) => {
+      const p = fromTemplate('template-fieldgroup.json', 'FieldGroup');
+      const m = SPIKE_MAP.ticketType;
+      p.name = step.name;
+      p.header = step.label ?? step.name;
+      p.fields = (step.fields ?? []).map((f, i) => {
+        const row: Record<string, unknown> = {
+          fieldid: refs[f.ref]?.id, seq: i + 1, usage: 1, tableid: 1,
+          enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1,
+        };
+        for (const key of m.mandatoryKeys ?? []) row[key] = f.mandatory ? m.mandatoryValue : m.optionalValue;
+        return row;
+      });
       return p;
     },
   },
@@ -373,7 +421,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'Workflow',
     template: 'template-workflow.json',
     build: (step, refs, warn) => {
-      const p = fromTemplate('template-workflow.json', 'Workflow');
+      const p = fromTemplate(workflowTemplateFile(step.copy_of), 'Workflow');
       p.name = step.name;
       const ins = step.insert_step;
       if (!ins) return p;
@@ -452,5 +500,7 @@ export function refsOf(step: PlanStep): string[] {
     step.insert_step?.enter_via,
     ...(step.insert_step?.exits ?? []).map((e) => e.via),
     ...(step.fields ?? []).map((f) => f.ref),
+    ...(step.members ?? []),
+    ...(step.groups ?? []),
   ].filter((r): r is string => Boolean(r));
 }

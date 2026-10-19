@@ -1,9 +1,28 @@
 {
   "request": "Add an 'Awaiting Equipment' stage to onboarding: after fulfilment, agents can mark equipment as ordered, which puts the ticket on hold until it's resolved. Use it on Employee Onboarding.",
   "steps": [
-    { "id": "st_equip", "object": "status", "action": "create", "name": "Awaiting Equipment", "sla_action": "hold" },
-    { "id": "o_equip", "object": "outcome", "action": "create", "name": "Equipment Ordered", "new_status": "st_equip" },
-    { "id": "o_resolve", "object": "outcome", "action": "reuse", "match": { "name": "Resolve Ticket" } },
+    {
+      "id": "st_equip",
+      "object": "status",
+      "action": "create",
+      "name": "Awaiting Equipment",
+      "sla_action": "hold"
+    },
+    {
+      "id": "o_equip",
+      "object": "outcome",
+      "action": "create",
+      "name": "Equipment Ordered",
+      "new_status": "st_equip"
+    },
+    {
+      "id": "o_resolve",
+      "object": "outcome",
+      "action": "reuse",
+      "match": {
+        "name": "Resolve Ticket"
+      }
+    },
     {
       "id": "wf",
       "object": "workflow",
@@ -13,9 +32,25 @@
         "name": "Awaiting Equipment",
         "after_step": "Request Fulfilment",
         "enter_via": "o_equip",
-        "exits": [{ "via": "o_resolve", "to_step": "Closed" }]
-      }
+        "exits": [
+          {
+            "via": "o_resolve",
+            "to_step": "Closed"
+          }
+        ]
+      },
+      "copy_of": "Service Request Workflow (with approval)"
     },
-    { "id": "tt_onboard", "object": "ticket_type", "action": "update", "match": { "name": "Employee Onboarding" }, "set": { "workflow": "wf" } }
+    {
+      "id": "tt_onboard",
+      "object": "ticket_type",
+      "action": "update",
+      "match": {
+        "name": "Employee Onboarding"
+      },
+      "set": {
+        "workflow": "wf"
+      }
+    }
   ]
 }
