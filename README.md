@@ -41,8 +41,16 @@ npm run post -- TicketType fixtures/template-tickettype.json --name "Spike copy"
 # 4. Check the copy in the Halo UI. Log works / partial / blocked in NOTES.md
 ```
 
-Templates the builder needs in `spike/fixtures/`:
-`template-field.json`, `template-sla.json`, `template-approvalprocess.json`, `template-tickettype.json`.
+Templates the builder needs in `spike/fixtures/` (copy them from captured fixtures, e.g. on Windows):
+
+```powershell
+Copy-Item spike\fixtures\fieldinfo-141.json spike\fixtures\template-field.json
+Copy-Item spike\fixtures\sla-3.json spike\fixtures\template-sla.json
+Copy-Item spike\fixtures\approvalprocess-4.json spike\fixtures\template-approvalprocess.json
+Copy-Item spike\fixtures\tickettype-36.json spike\fixtures\template-tickettype.json
+```
+
+Every template is deep-cleaned before use (`spike/lib/clean.ts`): copied Halo objects carry nested ids that point at other records, and posting them unchanged can modify existing config.
 
 ## The demo
 
@@ -60,10 +68,12 @@ Every `null` in `SPIKE_MAP` (top of `translators.ts`) is an unanswered question.
 ```
 spike/
 ├── lib/halo.ts          auth, GET/POST, safety switches, file helpers
-├── lib/translators.ts   plan step → Halo payload; SPIKE_MAP of unknowns
+├── lib/translators.ts   plan step → Halo payload; SPIKE_MAP of what's known
+├── lib/clean.ts         strips nested ids so a copy can't touch existing records
 ├── auth.ts              check the API app works
 ├── get.ts               read any resource, save as fixture
 ├── post.ts              create a renamed copy of a fixture
+├── bundle.ts            merge detail fixtures into one file to share
 ├── build-onboarding.ts  run a plan in order: reuse, create, verify
 ├── plans/               plans (committed)
 ├── fixtures/            real Halo JSON (git-ignored)

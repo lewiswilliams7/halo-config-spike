@@ -1,57 +1,72 @@
 /**
  * Plan step -> Halo API payload. Plain code, no AI.
  *
- * Each translator starts from a TEMPLATE fixture: a real object you built by hand
- * in the Halo UI and saved with `npm run get`. That way the payload shape is
- * Halo's own, and we only override the parts the plan specifies.
+ * Each translator starts from a TEMPLATE fixture (a real object captured with
+ * `npm run get`), deep-cleaned by cleanForCreate so no nested id can touch an
+ * existing record, then overrides only what the plan specifies.
  *
- * Anything we don't know yet lives in SPIKE_MAP below as null. Filling those
- * nulls in, by reading your fixtures, IS the spike. While a value is null the
- * builder skips that bit and prints a warning, so you can see exactly what's left.
+ * SPIKE_MAP holds what we've learned about Halo's payloads. Every value says where
+ * the evidence came from. `null` = still unknown: the builder skips it and warns.
+ * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
+import { cleanForCreate } from './clean.js';
 import { fileExists, loadJson } from './halo.js';
 
 export const SPIKE_MAP = {
-  /** Halo's code for each custom field type. Build one field of each type by hand, GET it, read the type value. */
+  /** FieldInfo.type. Evidence: fieldinfo-141 (text=0), -114 (memo=1), -124 (dropdown=2),
+   *  CFperipherals/CFsoftware (multi-select=3), -153 (date=4), -193 (checkbox=6). */
   fieldTypes: {
-    text: null,
-    memo: null,
-    date: null,
-    dropdown: null,
-    checkbox: null,
-  } as Record<string, number | string | null>,
+    text: 0,
+    memo: 1,
+    dropdown: 2,
+    multiselect: 3,
+    date: 4,
+    checkbox: 6,
+  } as Record<string, number | null>,
 
-  /** Property names on a Field payload. */
   field: {
-    label: null as string | null, //    display label, if separate from `name`
-    type: null as string | null, //     property holding the field type code
-    options: null as string | null, //  property holding dropdown values (and its shape: see NOTES.md)
+    label: 'label' as string | null, //   evidence: fieldinfo-141 label "First Name"
+    type: 'type' as string | null,
+    /** Dropdown values: existing fields use values: [{ name }] tied to a lookup table.
+     *  INFERRED that posting values without a lookup id creates a new list. Test with post. */
+    options: 'values' as string | null,
   },
 
-  /** Property names on an SLA payload. */
   sla: {
-    resolveDays: null as string | null, // or hours/minutes: note the unit in NOTES.md
+    /** Targets are per priority: priorities[].fixtime + fixunits ('H' | 'D'). Evidence: sla-3. */
+    priorities: 'priorities' as string | null,
+    fixTime: 'fixtime' as string | null,
+    fixUnits: 'fixunits' as string | null,
   },
 
-  /** Property names on an ApprovalProcess payload. */
   approval: {
-    requesterManager: null as string | null, // how "requester's line manager" is expressed
+    /** steps[].type. INFERRED: 10 = requester's line manager, from "Line Manager Approval Process" (id 4). */
+    steps: 'steps' as string | null,
+    lineManagerStepType: 10 as number | null,
   },
 
-  /** Property names on a TicketType payload. */
   ticketType: {
-    team: null as string | null, //            default team id
-    sla: null as string | null, //             default SLA id
-    approvalProcess: null as string | null, // approval process id
-    fields: null as string | null, //          array of attached fields
-    fieldId: null as string | null, //         inside each entry: the field id property
-    fieldMandatory: null as string | null, //  inside each entry: the mandatory flag
+    /** Evidence: tickettype-36. default_team takes the team NAME ("Human Resources"), not an id. */
+    teamName: 'default_team' as string | null,
+    sla: 'default_sla' as string | null, //                  id
+    approvalProcess: 'approval_process_id' as string | null, // id
+    summary: 'default_summary' as string | null,
+    fields: 'fields' as string | null,
+    fieldId: 'fieldid' as string | null,
+    /** INFERRED from tickettype-36: endusernew/technew = 3 on what look like required fields, 1 otherwise. */
+    mandatoryKeys: ['endusernew', 'technew'] as string[] | null,
+    mandatoryValue: 3,
+    optionalValue: 1,
   },
 };
 
 // ---------- plan types ----------
 
-export type Ids = Record<string, number | string>;
+export interface Ref {
+  id: number | string;
+  name?: string;
+}
+export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
@@ -78,7 +93,7 @@ export interface Plan {
 export interface Translator {
   resource: string;
   template: string; // file in fixtures/
-  build: (step: PlanStep, ids: Ids, warn: (msg: string) => void) => Record<string, unknown>;
+  build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
 // ---------- helpers ----------
@@ -87,13 +102,11 @@ function fromTemplate(file: string, resource: string): Record<string, unknown> {
   if (!fileExists(`fixtures/${file}`)) {
     throw new Error(
       `Missing fixtures/${file}.\n` +
-        `  Build one ${resource} by hand in Halo, then run: npm run get -- ${resource} <id>\n` +
-        `  and rename the saved file to ${file}.`,
+        `  Run: npm run get -- ${resource} <id of a good example>\n` +
+        `  then copy the saved file to fixtures/${file} (see README).`,
     );
   }
-  const copy = structuredClone(loadJson<Record<string, unknown>>(`fixtures/${file}`));
-  delete copy.id;
-  return copy;
+  return cleanForCreate(loadJson<Record<string, unknown>>(`fixtures/${file}`));
 }
 
 function set(payload: Record<string, unknown>, prop: string | null, value: unknown, what: string, warn: (m: string) => void) {
@@ -115,17 +128,26 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   field: {
-    // Ticket custom fields are FieldInfo. /Field is asset fields (see NOTES.md, 2026-10-19).
+    // Ticket custom fields are FieldInfo. /Field is asset fields (NOTES.md, 2026-10-19).
     resource: 'FieldInfo',
     template: 'template-field.json',
-    build: (step, _ids, warn) => {
+    build: (step, _refs, warn) => {
       const p = fromTemplate('template-field.json', 'FieldInfo');
+      const m = SPIKE_MAP.field;
       p.name = step.name;
-      set(p, SPIKE_MAP.field.label, step.label, 'field label', warn);
+      set(p, m.label, step.label, 'field label', warn);
+      p.hint = '';
+      p.defaultvalue = '';
+
       const code = step.type ? SPIKE_MAP.fieldTypes[step.type] : null;
       if (code === null || code === undefined) warn(`SPIKE_MAP gap: no type code for "${step.type}"; template's type kept`);
-      else set(p, SPIKE_MAP.field.type, code, 'field type', warn);
-      if (step.options?.length) set(p, SPIKE_MAP.field.options, step.options, 'dropdown options', warn);
+      else set(p, m.type, code, 'field type', warn);
+
+      if (step.options?.length) {
+        set(p, m.options, step.options.map((name) => ({ name })), 'dropdown options', warn);
+      } else if (m.options) {
+        delete p[m.options];
+      }
       return p;
     },
   },
@@ -133,10 +155,22 @@ export const translators: Record<PlanStep['object'], Translator> = {
   sla: {
     resource: 'SLA',
     template: 'template-sla.json',
-    build: (step, _ids, warn) => {
+    build: (step, _refs, warn) => {
       const p = fromTemplate('template-sla.json', 'SLA');
+      const m = SPIKE_MAP.sla;
       p.name = step.name;
-      set(p, SPIKE_MAP.sla.resolveDays, step.resolve_days, 'resolve target', warn);
+      if (step.resolve_days !== undefined) {
+        const rows = m.priorities ? (p[m.priorities] as Record<string, unknown>[] | undefined) : undefined;
+        if (!rows || !m.fixTime || !m.fixUnits) {
+          warn(`SPIKE_MAP gap: don't know how to set the resolve target yet; skipped`);
+        } else {
+          // Same target for every priority. A real plan could vary it per priority.
+          for (const row of rows) {
+            row[m.fixTime] = step.resolve_days;
+            row[m.fixUnits] = 'D';
+          }
+        }
+      }
       return p;
     },
   },
@@ -144,11 +178,17 @@ export const translators: Record<PlanStep['object'], Translator> = {
   approval_process: {
     resource: 'ApprovalProcess',
     template: 'template-approvalprocess.json',
-    build: (step, _ids, warn) => {
+    build: (step, _refs, warn) => {
       const p = fromTemplate('template-approvalprocess.json', 'ApprovalProcess');
+      const m = SPIKE_MAP.approval;
       p.name = step.name;
       if (step.approver === 'requester_manager') {
-        set(p, SPIKE_MAP.approval.requesterManager, true, 'requester manager approver', warn);
+        const steps = m.steps ? (p[m.steps] as Record<string, unknown>[] | undefined) : undefined;
+        if (!steps?.length || m.lineManagerStepType === null) {
+          warn(`SPIKE_MAP gap: don't know how to express "line manager" approval yet; skipped`);
+        } else {
+          p[m.steps as string] = [{ ...steps[0], sequence: 1, type: m.lineManagerStepType }];
+        }
       }
       return p;
     },
@@ -157,32 +197,41 @@ export const translators: Record<PlanStep['object'], Translator> = {
   ticket_type: {
     resource: 'TicketType',
     template: 'template-tickettype.json',
-    build: (step, ids, warn) => {
+    build: (step, refs, warn) => {
       const p = fromTemplate('template-tickettype.json', 'TicketType');
       const m = SPIKE_MAP.ticketType;
       p.name = step.name;
-      if (step.team) set(p, m.team, ids[step.team], 'default team', warn);
-      if (step.sla) set(p, m.sla, ids[step.sla], 'default SLA', warn);
-      if (step.approval) set(p, m.approvalProcess, ids[step.approval], 'approval process', warn);
-      if (step.fields?.length) {
-        if (!m.fields || !m.fieldId) {
-          warn(`SPIKE_MAP gap: don't know how fields attach to a ticket type yet; skipped`);
-        } else {
-          p[m.fields] = step.fields.map((f) => ({
-            [m.fieldId as string]: ids[f.ref],
-            ...(m.fieldMandatory ? { [m.fieldMandatory]: Boolean(f.mandatory) } : {}),
-          }));
-          if (!m.fieldMandatory && step.fields.some((f) => f.mandatory)) {
-            warn(`SPIKE_MAP gap: don't know the mandatory flag yet; fields attached as optional`);
-          }
-        }
+      set(p, m.summary, step.name, 'default summary', warn);
+      if (step.team) set(p, m.teamName, refs[step.team]?.name, 'default team', warn);
+      if (step.sla) set(p, m.sla, refs[step.sla]?.id, 'default SLA', warn);
+      if (step.approval) set(p, m.approvalProcess, refs[step.approval]?.id, 'approval process', warn);
+
+      if (!m.fields || !m.fieldId) {
+        warn(`SPIKE_MAP gap: don't know how fields attach to a ticket type yet; skipped`);
+      } else {
+        // Replace the template's field rows entirely: they belong to the template's ticket type.
+        p[m.fields] = (step.fields ?? []).map((f, i) => {
+          const level = f.mandatory ? m.mandatoryValue : m.optionalValue;
+          const row: Record<string, unknown> = {
+            [m.fieldId as string]: refs[f.ref]?.id,
+            seq: i + 1,
+            usage: 0,
+            groupid: 0,
+            enduserdetail: 1,
+            techdetail: 1,
+            enduseraction: 1,
+            techaction: 1,
+          };
+          for (const key of m.mandatoryKeys ?? []) row[key] = level;
+          return row;
+        });
       }
       return p;
     },
   },
 };
 
-/** Every id a step points at, so the builder can check order before running. */
+/** Every ref a step points at, so the builder can check order before running. */
 export function refsOf(step: PlanStep): string[] {
   return [step.team, step.sla, step.approval, ...(step.fields ?? []).map((f) => f.ref)].filter(
     (r): r is string => Boolean(r),

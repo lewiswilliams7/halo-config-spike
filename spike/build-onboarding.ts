@@ -20,7 +20,7 @@ import {
   saveJson,
   timestamp,
 } from './lib/halo.js';
-import { type Ids, type Plan, type PlanStep, refsOf, translators } from './lib/translators.js';
+import { type Plan, type Refs, refsOf, translators } from './lib/translators.js';
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
@@ -47,7 +47,7 @@ for (const step of plan.steps) {
 
 // 2. Run.
 type Outcome = 'reused' | 'already exists' | 'created' | 'would create' | 'failed';
-const ids: Ids = {};
+const refs: Refs = {};
 const log: { step: string; object: string; outcome: Outcome; id?: unknown; warnings: string[]; payload?: unknown; error?: string }[] = [];
 
 async function findByName(resource: string, name: string): Promise<Record<string, unknown> | undefined> {
@@ -66,7 +66,7 @@ for (const [i, step] of plan.steps.entries()) {
     if (step.action === 'reuse') {
       const found = await findByName(t.resource, step.match?.name ?? '');
       if (!found) throw new Error(`No ${t.resource} named "${step.match?.name}" to reuse. Create it in Halo first.`);
-      ids[step.id] = found.id as number;
+      refs[step.id] = { id: found.id as number, name: String(found.name ?? '') };
       log.push({ step: step.id, object: step.object, outcome: 'reused', id: found.id, warnings });
       console.log(`✓ ${label}  reused id ${found.id}`);
       continue;
@@ -74,22 +74,22 @@ for (const [i, step] of plan.steps.entries()) {
 
     const existing = await findByName(t.resource, step.name ?? '');
     if (existing) {
-      ids[step.id] = existing.id as number;
+      refs[step.id] = { id: existing.id as number, name: String(existing.name ?? '') };
       log.push({ step: step.id, object: step.object, outcome: 'already exists', id: existing.id, warnings });
       console.log(`= ${label}  already exists (id ${existing.id}), reused`);
       continue;
     }
 
-    const payload = t.build(step, ids, warn);
+    const payload = t.build(step, refs, warn);
 
     if (!apply) {
-      ids[step.id] = `<new ${step.id}>`;
+      refs[step.id] = { id: `<new ${step.id}>`, name: step.name };
       log.push({ step: step.id, object: step.object, outcome: 'would create', warnings, payload });
       console.log(`· ${label}  would create`);
     } else {
       const created = firstRecord(await haloPost(`/${t.resource}`, [payload]));
       if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
-      ids[step.id] = created.id as number;
+      refs[step.id] = { id: created.id as number, name: step.name };
 
       // Read back and check the name stuck: the cheapest proof it really saved.
       const back = firstRecord(await haloGet(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
@@ -109,7 +109,7 @@ for (const [i, step] of plan.steps.entries()) {
   }
 }
 
-const file = saveJson(`runs/build-${apply ? 'apply' : 'dry'}-${timestamp()}.json`, { plan: planFile, apply, ids, log });
+const file = saveJson(`runs/build-${apply ? 'apply' : 'dry'}-${timestamp()}.json`, { plan: planFile, apply, refs, log });
 const gaps = log.reduce((n, l) => n + l.warnings.length, 0);
 console.log(`\nRun log: ${file}`);
 console.log(gaps ? `${gaps} warning(s): fill the gaps in spike/lib/translators.ts → SPIKE_MAP.\n` : 'No gaps.\n');

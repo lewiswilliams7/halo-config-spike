@@ -3,10 +3,11 @@
  *
  *   npm run post -- TicketType fixtures/tickettype-12.json --name "Spike copy"
  *
- * Strips the top-level id so Halo creates a new record instead of updating,
+ * Deep-cleans every nested id (lib/clean.ts) so Halo creates a new record and touches nothing else,
  * renames it, POSTs it, and saves the response to runs/.
  * Then check the new record in the Halo UI and log the result in NOTES.md.
  */
+import { cleanForCreate } from './lib/clean.js';
 import { firstRecord, haloPost, loadJson, saveJson, timestamp } from './lib/halo.js';
 
 const args = process.argv.slice(2);
@@ -19,8 +20,8 @@ if (!resource || !fixture) {
   process.exit(1);
 }
 
-const payload = structuredClone(loadJson<Record<string, unknown>>(fixture));
-delete payload.id;
+// Deep clean: strips every nested id that could touch an existing record (see lib/clean.ts).
+const payload = cleanForCreate(loadJson<Record<string, unknown>>(fixture));
 payload.name = newName;
 
 console.log(`\nPOST /${resource} as "${newName}" (${Object.keys(payload).length} properties)`);

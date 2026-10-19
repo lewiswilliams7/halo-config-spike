@@ -33,12 +33,24 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** Trial has no "HR" team. Plan now reuses **Human Resources (id 6)**.
 - **2026-10-19:** Template candidates: ticket type **HR Onboarding (36)**, approval process **Line Manager Approval Process (4)**, SLA **Service Request SLA (3)**.
 
+- **2026-10-19:** Fixtures captured: fieldinfo 114/124/141/153/193, sla-3, approvalprocess-4, tickettype-36. Answers below.
+- **2026-10-19:** Field type codes (`FieldInfo.type`): text 0, memo 1, dropdown 2, multi-select 3, date 4, checkbox 6. Label is `label`; `name` is the CF… internal name. Dropdowns hold `values: [{name}]` linked to a `lookup` table.
+- **2026-10-19:** Ticket type links: `default_team` = team **name** (not id), `default_sla` = SLA id, `approval_process_id` = id, `workflow_id`, `default_priority`. Fields attach via `fields: [{fieldid, seq, endusernew, technew, ...}]`; field groups via `groupid`.
+- **2026-10-19:** SLA targets are per priority: `priorities[].fixtime` + `fixunits` ('H'/'D'), with `workday_id`.
+- **2026-10-19:** ⚠️ Copying a fixture as-is is DANGEROUS. Nested ids point at existing records: `fieldinfo.tickettypes` would attach a new field to existing ticket types, `lookup` would share an existing dropdown list, `sla.priorities[].slaid` and `tickettype.fields[].id` could modify the source records. Fixed with `lib/clean.ts` (deep-strips identity keys, parent pointers and link arrays), now used by both `post` and the builder.
+
+## To verify in the Halo UI (inferred, not yet proven)
+
+- [ ] Mandatory = `endusernew`/`technew` **3** (optional = 1). Check: on HR Onboarding, are First Name, Last Name and Employee ID required, and Starting Date optional?
+- [ ] Approval step `type` **10** = requester's line manager. Check: open Line Manager Approval Process, see what the step's approver is set to.
+- [ ] Posting a dropdown with `values: [{name}]` and no `lookup` creates a new value list (test with the first field write).
+
 ## Open questions
 
-- [ ] Can fields be attached to a ticket type, and made mandatory, through `POST /TicketType`? Which properties?
-- [ ] Field type codes: which value means text, memo, date, dropdown, checkbox?
-- [ ] Dropdown options: inline on the field, or a separate lookup?
-- [ ] SLA targets: stored in days, hours or minutes? Which property?
+- [x] Fields attach via `fields[]` with `fieldid` (properties known; write still to be tested).
+- [x] Field type codes: answered above.
+- [ ] Dropdown options: `values` + `lookup` table. Does posting values create the list? (write test)
+- [x] SLA targets: per priority, `fixtime` + `fixunits`.
 - [ ] Workdays: can they be created over the API, or only reused?
 - [ ] "Email the manager on submit": approval process, ticket type, or an automation?
 - [ ] How is "requester's line manager" expressed on an approval process?
