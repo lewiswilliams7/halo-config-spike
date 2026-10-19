@@ -13,7 +13,8 @@
     "post": "tsx spike/post.ts",
     "build:onboarding": "tsx spike/build-onboarding.ts",
     "bundle": "tsx spike/bundle.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "diff": "tsx spike/diff.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"
