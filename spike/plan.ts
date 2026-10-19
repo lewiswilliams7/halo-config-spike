@@ -15,10 +15,10 @@
  */
 import { readFileSync } from 'node:fs';
 import { complete, parseJsonReply } from './lib/llm.js';
-import { INSTANCE_KEY, extractList, firstRecord, haloGet, loadJson, saveJson, spikePath, timestamp } from './lib/halo.js';
+import { INSTANCE_KEY, loadJson, saveJson, spikePath, timestamp } from './lib/halo.js';
+import { readInventory } from './lib/inventory.js';
 import { type Plan, type PlanStep, refsOf } from './lib/translators.js';
 
-type Row = Record<string, unknown>;
 
 // ---------- request ----------
 const args = process.argv.slice(2);
@@ -31,29 +31,8 @@ if (!request) {
 
 // ---------- 1. read the instance ----------
 console.log(`\nReading ${INSTANCE_KEY} …`);
-const names = async (resource: string, filter?: (r: Row) => boolean) => {
-  const rows = extractList(await haloGet(`/${resource}`));
-  return (filter ? rows.filter(filter) : rows).map((r) => String(r.name ?? r.buttonname ?? r.outcome ?? '')).filter(Boolean);
-};
-const workflows = extractList(await haloGet('/Workflow'));
-const workflowSteps: Record<string, string[]> = {};
-for (const w of workflows) {
-  const d = firstRecord(await haloGet(`/Workflow/${w.id}`, { includedetails: 'true' }));
-  workflowSteps[String(w.name)] = ((d?.steps as Row[]) ?? []).map((s) => String(s.name));
-}
-const inventory = {
-  ticket_types: await names('TicketType'),
-  custom_fields: await names('FieldInfo', (r) => Number(r.id) > 0 && String(r.name ?? '').startsWith('CF')),
-  field_groups: await names('FieldGroup'),
-  workflows_and_their_steps: workflowSteps,
-  statuses: await names('Status'),
-  actions: await names('Outcome'),
-  slas: await names('SLA'),
-  approval_processes: await names('ApprovalProcess'),
-  approval_groups: await names('CAB'),
-  teams: await names('Team'),
-  agents: await names('Agent', (r) => Number(r.id) > 1),
-};
+const inventory = await readInventory();
+const workflowSteps = inventory.workflows_and_their_steps;
 const all = new Set(Object.values(inventory).flatMap((v) => (Array.isArray(v) ? v : Object.keys(v))).map((n) => n.toLowerCase()));
 
 // ---------- 2. ask the model ----------
@@ -117,10 +96,14 @@ function validate(plan: Plan): string[] {
       errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
     if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
     if (s.copy_of && !workflowSteps[s.copy_of]) errors.push(`${where}: copy_of "${s.copy_of}" is not an existing workflow`);
-    if (s.insert_step && s.copy_of && workflowSteps[s.copy_of]) {
+    const inserts = [...(s.insert_steps ?? []), ...(s.insert_step ? [s.insert_step] : [])];
+    if (inserts.length && s.copy_of && workflowSteps[s.copy_of]) {
       const stepsOf = workflowSteps[s.copy_of].map((n) => n.toLowerCase());
-      for (const n of [s.insert_step.after_step, ...s.insert_step.exits.map((e) => e.to_step)])
-        if (!stepsOf.includes(String(n).toLowerCase())) errors.push(`${where}: "${n}" is not a step of "${s.copy_of}"`);
+      for (const ins of inserts) {
+        for (const n of [ins.after_step, ...ins.exits.map((e) => e.to_step)])
+          if (!stepsOf.includes(String(n).toLowerCase())) errors.push(`${where}: "${n}" is not a step of "${s.copy_of}" (or an earlier inserted step)`);
+        stepsOf.push(ins.name.toLowerCase());
+      }
     }
     for (const r of refsOf(s)) if (!seen.has(r)) errors.push(`${where}: uses "${r}" before it is defined`);
     seen.add(s.id);

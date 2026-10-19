@@ -94,12 +94,11 @@ export interface PlanStep {
   /** outcome (action): ref of the status the ticket moves to. */
   new_status?: string;
   /** workflow: insert one new step after an existing one. */
-  insert_step?: {
-    name: string;
-    after_step: string; //                     existing step name in the template
-    enter_via: string; //                      outcome ref: action on after_step that moves into the new step
-    exits: { via: string; to_step: string }[]; // outcome refs: actions on the new step, to existing step names
-  };
+  insert_step?: InsertStep;
+  /** workflow: insert several steps, in order; later ones may come after earlier inserted ones. */
+  insert_steps?: InsertStep[];
+  /** sla: per-priority resolve targets by priority name, e.g. { "Critical": "4h", "Low": "5d" }. */
+  targets?: Record<string, string>;
   /** team / approval_group: agent refs. */
   members?: string[];
   /** approval_group: how many members must approve. */
@@ -114,6 +113,13 @@ export interface PlanStep {
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
   set?: { workflow?: string; approval?: string };
+}
+
+export interface InsertStep {
+  name: string;
+  after_step: string; //                         existing (or earlier inserted) step name
+  enter_via: string; //                          outcome ref: action on after_step that moves into the new step
+  exits: { via: string; to_step: string }[]; //  outcome refs: actions on the new step, to step names
 }
 
 export type Approver =
@@ -250,7 +256,19 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const p = fromTemplate(templateFileFor(step, 'template-sla.json'), 'SLA');
       const m = SPIKE_MAP.sla;
       p.name = step.name;
-      if (step.resolve_days !== undefined) {
+      if (step.targets) {
+        const rows = m.priorities ? (p[m.priorities] as Record<string, unknown>[] | undefined) : undefined;
+        for (const [prio, target] of Object.entries(step.targets)) {
+          const row = rows?.find((r) => String(r.name).toLowerCase() === prio.toLowerCase());
+          const t = String(target).match(/^(\d+(?:\.\d+)?)\s*([hd])$/i);
+          if (!row || !t || !m.fixTime || !m.fixUnits) {
+            warn(`SLA target "${prio}: ${target}" skipped (unknown priority or format; use e.g. "4h" or "5d")`);
+            continue;
+          }
+          row[m.fixTime] = Number(t[1]);
+          row[m.fixUnits] = t[2].toUpperCase();
+        }
+      } else if (step.resolve_days !== undefined) {
         const rows = m.priorities ? (p[m.priorities] as Record<string, unknown>[] | undefined) : undefined;
         if (!rows || !m.fixTime || !m.fixUnits) {
           warn(`SPIKE_MAP gap: don't know how to set the resolve target yet; skipped`);
@@ -444,65 +462,60 @@ export const translators: Record<PlanStep['object'], Translator> = {
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, workflowTemplateFile()), 'Workflow');
       p.name = step.name;
-      const ins = step.insert_step;
-      if (!ins) return p;
+      const inserts = [...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])];
+      if (!inserts.length) return p;
 
       type Row = Record<string, unknown>;
       const steps = p.steps as Row[];
       const stages = p.stages as Row[];
       const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
-      const after = byName(ins.after_step);
-      if (!after) throw new Error(`Workflow template has no step named "${ins.after_step}"`);
 
-      const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
-      const newStage = Number(after.stage_number) + 1;
+      for (const ins of inserts) {
+        const after = byName(ins.after_step);
+        if (!after) throw new Error(`Workflow has no step named "${ins.after_step}"`);
 
-      // Make room in the progress bar: shift later stages (and the steps on them) along by one.
-      for (const st of stages) if (Number(st.sequence) >= newStage) st.sequence = Number(st.sequence) + 1;
-      for (const s of steps) if (Number(s.stage_number) >= newStage) s.stage_number = Number(s.stage_number) + 1;
-      stages.push({ sequence: newStage, name: ins.name, edit_outcome: -1, type: 1 });
-      stages.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+        const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
+        const newStage = Number(after.stage_number) + 1;
 
-      // Action rows copy the shape of an existing outcome action on the "after" step.
-      const actions = (after.actions as Row[]) ?? [];
-      const shape = actions.find((a) => Number(a.action_type) === 1) ?? actions[0] ?? {};
-      const action = (via: string, from: number, to: number, seq: number): Row => ({
-        ...shape,
-        action_type: 1,
-        action_id: refs[via]?.id,
-        action_name: refs[via]?.name ?? '',
-        action_outcome: '',
-        start_step: from,
-        end_step: to,
-        seq,
-        approval_result: -1,
-        conditions: [],
-        conditions_exec: [],
-        group_restrictions: [],
-      });
+        // Make room in the progress bar: shift later stages (and the steps on them) along by one.
+        for (const st of stages) if (Number(st.sequence) >= newStage) st.sequence = Number(st.sequence) + 1;
+        for (const s of steps) if (Number(s.stage_number) >= newStage) s.stage_number = Number(s.stage_number) + 1;
+        stages.push({ sequence: newStage, name: ins.name, edit_outcome: -1, type: 1 });
+        stages.sort((a, b) => Number(a.sequence) - Number(b.sequence));
 
-      // Into the new step: an extra action on the "after" step.
-      actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
-      after.actions = actions;
+        // Action rows copy the shape of an existing outcome action on the "after" step.
+        const actions = (after.actions as Row[]) ?? [];
+        const shape = actions.find((a) => Number(a.action_type) === 1) ?? actions[0] ?? {};
+        const action = (via: string, from: number, to: number, seq: number): Row => ({
+          ...shape,
+          action_type: 1,
+          action_id: refs[via]?.id,
+          action_name: refs[via]?.name ?? '',
+          action_outcome: '',
+          start_step: from,
+          end_step: to,
+          seq,
+          approval_result: -1,
+          conditions: [],
+          conditions_exec: [],
+          group_restrictions: [],
+        });
 
-      // The new step itself, shaped like the "after" step, with its own exit actions.
-      const exits = ins.exits.map((e, i) => {
-        const target = byName(e.to_step);
-        if (!target) throw new Error(`Workflow template has no step named "${e.to_step}"`);
-        return action(e.via, newStepId, Number(target.step_id), i + 1);
-      });
-      steps.push({
-        ...after,
-        name: ins.name,
-        step_id: newStepId,
-        stage_number: newStage,
-        isstart: false,
-        isend: false,
-        islaststep: false,
-        actions: exits,
-      });
+        // Into the new step: an extra action on the "after" step.
+        actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
+        after.actions = actions;
 
-      warn(`Designer layout (flow_chart_json) has no box for new step "${ins.name}"; check how Halo's designer shows it`);
+        // The new step itself, shaped like the "after" step, with its own exit actions.
+        const newStep: Row = { ...after, name: ins.name, step_id: newStepId, stage_number: newStage, isstart: false, isend: false, islaststep: false, actions: [] };
+        steps.push(newStep);
+        newStep.actions = ins.exits.map((e, i) => {
+          const target = byName(e.to_step);
+          if (!target) throw new Error(`Workflow has no step named "${e.to_step}"`);
+          return action(e.via, newStepId, Number(target.step_id), i + 1);
+        });
+      }
+
+      // Designer boxes for new steps are added by Halo itself (proven 2026-10-19: designer showed Awaiting Equipment).
       return p;
     },
   },
@@ -518,8 +531,7 @@ export function refsOf(step: PlanStep): string[] {
     step.set?.workflow,
     step.set?.approval,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
-    step.insert_step?.enter_via,
-    ...(step.insert_step?.exits ?? []).map((e) => e.via),
+    ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     ...(step.fields ?? []).map((f) => f.ref),
     ...(step.members ?? []),
     ...(step.groups ?? []),

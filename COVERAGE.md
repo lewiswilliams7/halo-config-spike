@@ -15,8 +15,10 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Ticket types (fields, mandatory, team, SLA, approval, workflow) | ✅ | T1, T2 |
 | Statuses | ✅ | |
 | Actions (Outcomes) | ✅ | O1, O2. `systemid 0` still to confirm |
-| Workflows (copy, add a step and stage) | ✅ | W1, W2. Designer box TBC. Remove/reorder steps not done |
-| SLAs (targets per priority) | ✅ | A1. Workdays reused, not created |
+| Workflows (copy, add a step and stage) | ✅ | W1, W2. Designer shows new steps |
+| Workflows: several new steps in a chain | 🧪 | `insert_steps` |
+| SLAs (one target for all priorities) | ✅ | A1. Workdays reused, not created |
+| SLAs: different target per priority | 🧪 | `targets: {"Critical": "4h"}` |
 | Approval processes: line manager | ✅ | P1 |
 | Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
 | Approval groups (CABs) | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
