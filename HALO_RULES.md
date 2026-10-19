@@ -46,6 +46,9 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | A1 | SLA targets are per priority: set `priorities[].fixtime` + `fixunits` (`H` or `D`) on every row. Reuse an existing `workday_id`. | SLA created with the template's targets | `translators.ts` sla |
 | P1 | Approval step `type` **10** = requester's line manager (inferred from "Line Manager Approval Process"; confirm). | Wrong approver | `SPIKE_MAP.approval` |
 
+| U0 | Partial updates are safe: `POST [{ id, changedProp }]` leaves every other property alone (proven on FieldInfo 316). | Updates would need full objects and risk wiping config |
+| F6 | ⚠️ OPEN: API-created dropdowns show no options on the form. The values reach the browser (HAR), but the field has no `visibility`, and Halo ignores `visibility` on both create and update. Under investigation. | Dropdowns unusable |
+
 ## After a build
 
 | # | Rule | Without it |
