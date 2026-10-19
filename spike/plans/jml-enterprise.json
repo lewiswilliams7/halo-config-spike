@@ -1,0 +1,588 @@
+{
+  "request": "See prompts/enterprise-jml-2.txt: Joiners/Movers/Leavers for a 2,000-person company.",
+  "steps": [
+    {
+      "id": "ag_kaleem",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Kaleem Smith"
+      }
+    },
+    {
+      "id": "ag_jennifer",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Jennifer Williams"
+      }
+    },
+    {
+      "id": "ag_robert",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Robert James"
+      }
+    },
+    {
+      "id": "team_people",
+      "object": "team",
+      "action": "create",
+      "name": "People Operations",
+      "members": [
+        "ag_kaleem",
+        "ag_jennifer"
+      ]
+    },
+    {
+      "id": "grp_people",
+      "object": "approval_group",
+      "action": "create",
+      "name": "People Approvers",
+      "members": [
+        "ag_jennifer",
+        "ag_kaleem"
+      ],
+      "approvals_needed": 1
+    },
+    {
+      "id": "grp_itsec",
+      "object": "approval_group",
+      "action": "create",
+      "name": "IT Security Approvers",
+      "members": [
+        "ag_robert"
+      ],
+      "approvals_needed": 1
+    },
+    {
+      "id": "f_j_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerFullName",
+      "label": "Full name",
+      "type": "text"
+    },
+    {
+      "id": "f_j_title",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerJobTitle",
+      "label": "Job title",
+      "type": "text"
+    },
+    {
+      "id": "f_j_start",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerStartDate",
+      "label": "Start date",
+      "type": "date"
+    },
+    {
+      "id": "f_j_dept",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerDepartment",
+      "label": "Department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_j_office",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerOffice",
+      "label": "Office",
+      "type": "dropdown",
+      "options": [
+        "London",
+        "Birmingham",
+        "Remote"
+      ]
+    },
+    {
+      "id": "f_j_contract",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerContractType",
+      "label": "Contract type",
+      "type": "dropdown",
+      "options": [
+        "Permanent",
+        "Fixed-term",
+        "Contractor"
+      ]
+    },
+    {
+      "id": "f_j_manager",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerManager",
+      "label": "Manager",
+      "type": "text"
+    },
+    {
+      "id": "f_j_end",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerContractEnd",
+      "label": "Contract end date (contractors)",
+      "type": "date"
+    },
+    {
+      "id": "f_j_laptop",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerLaptop",
+      "label": "Laptop type",
+      "type": "dropdown",
+      "options": [
+        "Standard",
+        "Developer",
+        "Executive"
+      ]
+    },
+    {
+      "id": "f_j_monitors",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerMonitors",
+      "label": "Extra monitors",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_j_mobile",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerMobile",
+      "label": "Mobile phone",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_j_software",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerSoftware",
+      "label": "Software",
+      "type": "multiselect",
+      "options": [
+        "Office 365",
+        "Salesforce",
+        "Adobe",
+        "Jira"
+      ]
+    },
+    {
+      "id": "f_j_admin",
+      "object": "field",
+      "action": "create",
+      "name": "CFJoinerAdminRights",
+      "label": "Admin rights",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_m_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFMoverEmployee",
+      "label": "Employee name",
+      "type": "text"
+    },
+    {
+      "id": "f_m_from",
+      "object": "field",
+      "action": "create",
+      "name": "CFMoverCurrentDept",
+      "label": "Current department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_m_to",
+      "object": "field",
+      "action": "create",
+      "name": "CFMoverNewDept",
+      "label": "New department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_m_date",
+      "object": "field",
+      "action": "create",
+      "name": "CFMoverEffectiveDate",
+      "label": "Effective date",
+      "type": "date"
+    },
+    {
+      "id": "f_m_access",
+      "object": "field",
+      "action": "create",
+      "name": "CFMoverAccessChange",
+      "label": "System access needs changing",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_l_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFLeaverEmployee",
+      "label": "Employee name",
+      "type": "text"
+    },
+    {
+      "id": "f_l_date",
+      "object": "field",
+      "action": "create",
+      "name": "CFLeaverDate",
+      "label": "Leaving date",
+      "type": "date"
+    },
+    {
+      "id": "f_l_reason",
+      "object": "field",
+      "action": "create",
+      "name": "CFLeaverReason",
+      "label": "Reason for leaving",
+      "type": "dropdown",
+      "options": [
+        "Resignation",
+        "Dismissal",
+        "Retirement",
+        "End of contract"
+      ]
+    },
+    {
+      "id": "f_l_kit",
+      "object": "field",
+      "action": "create",
+      "name": "CFLeaverHasKit",
+      "label": "Has company equipment to return",
+      "type": "checkbox"
+    },
+    {
+      "id": "fg_joiner",
+      "object": "field_group",
+      "action": "create",
+      "name": "Joiner Details",
+      "label": "New joiner",
+      "fields": [
+        {
+          "ref": "f_j_name"
+        },
+        {
+          "ref": "f_j_title"
+        },
+        {
+          "ref": "f_j_start",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_dept",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_office",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_contract",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_manager"
+        },
+        {
+          "ref": "f_j_end"
+        }
+      ]
+    },
+    {
+      "id": "fg_equipment",
+      "object": "field_group",
+      "action": "create",
+      "name": "Joiner Equipment",
+      "label": "Equipment and access",
+      "fields": [
+        {
+          "ref": "f_j_laptop"
+        },
+        {
+          "ref": "f_j_monitors"
+        },
+        {
+          "ref": "f_j_mobile"
+        },
+        {
+          "ref": "f_j_software"
+        },
+        {
+          "ref": "f_j_admin"
+        }
+      ]
+    },
+    {
+      "id": "fg_mover",
+      "object": "field_group",
+      "action": "create",
+      "name": "Mover Details",
+      "label": "Mover",
+      "fields": [
+        {
+          "ref": "f_m_name",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_from"
+        },
+        {
+          "ref": "f_m_to",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_date",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_access"
+        }
+      ]
+    },
+    {
+      "id": "fg_leaver",
+      "object": "field_group",
+      "action": "create",
+      "name": "Leaver Details",
+      "label": "Leaver",
+      "fields": [
+        {
+          "ref": "f_l_name",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_date",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_reason",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_kit"
+        }
+      ]
+    },
+    {
+      "id": "sla_joiner",
+      "object": "sla",
+      "action": "create",
+      "name": "Joiner - 5 working days",
+      "based_on": "Service Request SLA",
+      "resolve_days": 5
+    },
+    {
+      "id": "sla_mover",
+      "object": "sla",
+      "action": "create",
+      "name": "Mover - 3 working days",
+      "based_on": "Service Request SLA",
+      "resolve_days": 3
+    },
+    {
+      "id": "sla_leaver",
+      "object": "sla",
+      "action": "create",
+      "name": "Leaver - 1 day, critical 4 hours",
+      "based_on": "Service Request SLA",
+      "targets": {
+        "Critical": "4h",
+        "High": "1d",
+        "Medium": "1d",
+        "Low": "1d"
+      }
+    },
+    {
+      "id": "appr_joiner",
+      "object": "approval_process",
+      "action": "create",
+      "name": "Joiner approval (People, then line manager)",
+      "based_on": "Line Manager Approval Process",
+      "approvers": [
+        {
+          "group": "grp_people",
+          "min": 1
+        },
+        {
+          "line_manager": true
+        }
+      ]
+    },
+    {
+      "id": "appr_mover",
+      "object": "approval_process",
+      "action": "create",
+      "name": "Mover approval (People)",
+      "based_on": "Line Manager Approval Process",
+      "approvers": [
+        {
+          "group": "grp_people",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "id": "st_inprogress",
+      "object": "status",
+      "action": "reuse",
+      "match": {
+        "name": "In Progress"
+      }
+    },
+    {
+      "id": "o_hr_done",
+      "object": "outcome",
+      "action": "create",
+      "name": "HR Checks Complete",
+      "new_status": "st_inprogress"
+    },
+    {
+      "id": "o_accounts",
+      "object": "outcome",
+      "action": "create",
+      "name": "Accounts Created",
+      "new_status": "st_inprogress"
+    },
+    {
+      "id": "o_desk",
+      "object": "outcome",
+      "action": "create",
+      "name": "Desk and Pass Ready"
+    },
+    {
+      "id": "o_kit",
+      "object": "outcome",
+      "action": "reuse",
+      "match": {
+        "name": "Equipment Ordered"
+      }
+    },
+    {
+      "id": "wf_joiner",
+      "object": "workflow",
+      "action": "create",
+      "name": "Joiner Workflow",
+      "copy_of": "Service Request Workflow (with approval)",
+      "insert_steps": [
+        {
+          "name": "IT Provisioning",
+          "after_step": "Request Fulfilment",
+          "enter_via": "o_hr_done",
+          "exits": [
+            {
+              "via": "o_kit",
+              "to_step": "IT Provisioning"
+            }
+          ]
+        },
+        {
+          "name": "Facilities",
+          "after_step": "IT Provisioning",
+          "enter_via": "o_accounts",
+          "exits": [
+            {
+              "via": "o_desk",
+              "to_step": "Closed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tt_joiner",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "New Joiner",
+      "based_on": "New Starter Request",
+      "groups": [
+        "fg_joiner",
+        "fg_equipment"
+      ],
+      "team": "team_people",
+      "sla": "sla_joiner",
+      "approval": "appr_joiner"
+    },
+    {
+      "id": "tt_joiner_wf",
+      "object": "ticket_type",
+      "action": "update",
+      "match": {
+        "name": "New Joiner"
+      },
+      "set": {
+        "workflow": "wf_joiner"
+      }
+    },
+    {
+      "id": "tt_mover",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "Mover",
+      "based_on": "Employee Transfer Request",
+      "groups": [
+        "fg_mover"
+      ],
+      "team": "team_people",
+      "sla": "sla_mover",
+      "approval": "appr_mover"
+    },
+    {
+      "id": "tt_leaver",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "Leaver",
+      "based_on": "Leaver Request",
+      "groups": [
+        "fg_leaver"
+      ],
+      "team": "team_people",
+      "sla": "sla_leaver"
+    }
+  ],
+  "assumptions": [
+    "\"HR checks\" is the existing Request Fulfilment step (People Operations works it), because renaming existing workflow steps isn't supported. The ticket then moves: HR Checks Complete → IT Provisioning → Accounts Created → Facilities → Desk and Pass Ready → Closed.",
+    "\"SLA stops while waiting for kit\": IT use the existing Equipment Ordered action in IT Provisioning, which moves the ticket to Awaiting Equipment (SLA on hold). Accounts Created puts it back to In Progress, so the clock restarts for Facilities.",
+    "The copied workflow keeps its original Resolve Ticket shortcut from Request Fulfilment to Closed; removing existing transitions isn't supported.",
+    "Line manager approval fails for requesters with no manager set in Halo (rule P4). Check managers are populated before go-live.",
+    "Leaver is based on the existing Leaver Request type and keeps whatever approval/workflow that type already has.",
+    "Dismissal leavers aren't automatically made Critical: agents set priority Critical to get the 4-hour target.",
+    "Ticket types are based on New Starter Request, Employee Transfer Request and Leaver Request; SLAs and approvals on Service Request SLA and Line Manager Approval Process."
+  ],
+  "unsupported": [
+    "Contract end date only appearing/required when contract type is Contractor (conditional field visibility): built as an optional field instead.",
+    "IT Security approval only when Salesforce or admin rights are requested (conditional approval stage): the IT Security Approvers group is created but not added to the joiner approval.",
+    "Dismissals skipping approval and routing straight to IT, and automatically getting the 4-hour target (rules based on field values).",
+    "Child tickets for each piece of kit from IT provisioning.",
+    "Emails to the manager on approval and to the requester when IT provisioning finishes.",
+    "People > Joiners / Movers / Leavers categories (categories not supported yet; this instance's API also returned none)."
+  ]
+}

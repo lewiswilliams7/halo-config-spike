@@ -1,0 +1,17 @@
+Hi, we're about 2,000 people and our joiners, movers and leavers are a mess at the moment (emails and spreadsheets). Can you set this up properly in Halo?
+
+New joiners: we need their full name, job title, start date, department (HR, IT, Finance, Sales, Operations), which office (London, Birmingham or Remote), contract type (Permanent, Fixed-term, Contractor), who their manager is, and the contract end date if they're a contractor. Start date, department, office and contract type have to be filled in. Then a separate equipment bit: laptop type (Standard, Developer or Executive), whether they need extra monitors, whether they need a mobile, what software they need (Office 365, Salesforce, Adobe, Jira – can be more than one) and whether they need admin rights.
+
+Movers: employee name, the department they're leaving and the one they're moving to, the date it takes effect, and whether their system access needs changing. Name, new department and date are required.
+
+Leavers: employee name, leaving date, why they're leaving (Resignation, Dismissal, Retirement, End of contract) and whether they've got company kit to hand back. All of those except the kit question are required.
+
+Everything should land with a new People Operations team – that's Kaleem Smith and Jennifer Williams.
+
+Approvals: joiners need sign-off from People (Jennifer or Kaleem, either is fine), then the person's line manager, and if they're asking for Salesforce or admin rights then IT Security has to approve too – that's Robert James for now. Movers just need People to sign off. Dismissals should skip approval completely and go straight to IT so accounts are disabled the same day.
+
+For joiners I want the ticket to move through HR checks, then IT provisioning, then Facilities sorting the desk and pass, then closed. While IT are waiting for kit to arrive the SLA clock should stop. IT should get separate child tickets for each bit of kit.
+
+Targets: joiners done within 5 working days, movers 3, leavers 1 working day, but dismissals within 4 hours.
+
+Also email the manager when a joiner is approved and email whoever raised it when IT provisioning is finished, and put all of these under a People > Joiners / Movers / Leavers category.
