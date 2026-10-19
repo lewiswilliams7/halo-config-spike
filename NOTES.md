@@ -42,6 +42,8 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** ✅ **First API write.** `POST /FieldInfo` created field 310. Read back: attached to **0** ticket types, so the deep clean works.
 - **2026-10-19:** Halo **prefixes custom field names with "CF" itself**. Sent `CFSpikeTest`, stored `CFCFSpikeTest`. Field translator now sends the bare name; builder expects `CF` + bare name when finding and verifying.
 
+- **2026-10-19:** ✅ **Full build applied.** Fields 311–314, SLA 5, approval process 8, ticket type 56 created in order. Run log review found two template leftovers on the ticket type: `approval_process_name` still named the template's process, and `published_id` (a GUID) was copied. Both now fixed (`published_id` treated as identity in `clean.ts`). Need to check whether ticket type 56 shares HR Onboarding's portal form.
+
 ## To verify in the Halo UI (inferred, not yet proven)
 
 - [ ] Mandatory = `endusernew`/`technew` **3** (optional = 1). Check: on HR Onboarding, are First Name, Last Name and Employee ID required, and Starting Date optional?

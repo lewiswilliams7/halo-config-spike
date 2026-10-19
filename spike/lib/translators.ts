@@ -213,7 +213,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
       set(p, m.summary, step.name, 'default summary', warn);
       if (step.team) set(p, m.teamName, refs[step.team]?.name, 'default team', warn);
       if (step.sla) set(p, m.sla, refs[step.sla]?.id, 'default SLA', warn);
-      if (step.approval) set(p, m.approvalProcess, refs[step.approval]?.id, 'approval process', warn);
+      if (step.approval) {
+        set(p, m.approvalProcess, refs[step.approval]?.id, 'approval process', warn);
+        // Display name copied from the template would otherwise still name the template's process.
+        if ('approval_process_name' in p) p.approval_process_name = refs[step.approval]?.name ?? '';
+      }
 
       if (!m.fields || !m.fieldId) {
         warn(`SPIKE_MAP gap: don't know how fields attach to a ticket type yet; skipped`);

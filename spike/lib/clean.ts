@@ -14,7 +14,7 @@
  * plan sets on purpose (fieldid, groupid, workday_id, default_sla, ...).
  */
 
-const IDENTITY_KEYS = new Set(['id', 'guid', 'pk']);
+const IDENTITY_KEYS = new Set(['id', 'guid', 'pk', 'published_id']);
 const PARENT_POINTER_KEYS = new Set(['rtid', 'slaid', 'processid', 'lookupid', 'entity_id', 'entity_id2', 'criteriagroup_id']);
 const LINK_ARRAYS = new Set([
   'tickettypes', //   fieldinfo → ticket types it's attached to
