@@ -1,0 +1,15 @@
+{
+  "request": "A/B test: same two stages, but stage 2 is a named agent instead of the line manager.",
+  "steps": [
+    { "id": "grp_hr", "object": "approval_group", "action": "reuse", "match": { "name": "Human Resource Approval Group" } },
+    { "id": "ag_kaleem", "object": "agent", "action": "reuse", "match": { "name": "Kaleem Smith" } },
+    {
+      "id": "appr_ab",
+      "object": "approval_process",
+      "action": "create",
+      "name": "Approval test (HR group, then Kaleem)",
+      "approvers": [{ "group": "grp_hr", "min": 1 }, { "agent": "ag_kaleem" }]
+    },
+    { "id": "tt_onboard", "object": "ticket_type", "action": "update", "match": { "name": "Employee Onboarding" }, "set": { "approval": "appr_ab" } }
+  ]
+}
