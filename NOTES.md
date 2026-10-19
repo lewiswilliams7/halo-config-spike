@@ -25,6 +25,13 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 
 Result = **works** / **partial** / **blocked**.
 
+## Findings log
+
+- **2026-10-19:** Auth works. Client credentials token, scope includes `all`, expires in 32400s (9 hours).
+- **2026-10-19:** `GET /Field` returns **asset fields** (IP Address, Serial Number, RAM…), not ticket custom fields. Ticket custom fields are expected under `/FieldInfo`. To confirm before changing the field translator.
+- **2026-10-19:** Trial has no "HR" team. Plan now reuses **Human Resources (id 6)**.
+- **2026-10-19:** Template candidates: ticket type **HR Onboarding (36)**, approval process **Line Manager Approval Process (4)**, SLA **Service Request SLA (3)**.
+
 ## Open questions
 
 - [ ] Can fields be attached to a ticket type, and made mandatory, through `POST /TicketType`? Which properties?

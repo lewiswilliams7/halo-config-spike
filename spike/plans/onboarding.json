@@ -1,7 +1,7 @@
 {
   "request": "Create an employee onboarding process. Ticket type Employee Onboarding with fields for employee name, start date, department and equipment required. Department and start date mandatory. Assign to HR, manager approval, five-day SLA.",
   "steps": [
-    { "id": "team_hr", "object": "team", "action": "reuse", "match": { "name": "HR" } },
+    { "id": "team_hr", "object": "team", "action": "reuse", "match": { "name": "Human Resources" } },
 
     { "id": "f_name", "object": "field", "action": "create", "name": "CFOnboardEmployeeName", "label": "Employee name", "type": "text" },
     { "id": "f_start", "object": "field", "action": "create", "name": "CFOnboardStartDate", "label": "Start date", "type": "date" },
