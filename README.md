@@ -49,6 +49,9 @@ Copy-Item spike\fixtures\fieldinfo-124.json spike\fixtures\template-field-dropdo
 Copy-Item spike\fixtures\sla-3.json spike\fixtures\template-sla.json
 Copy-Item spike\fixtures\approvalprocess-4.json spike\fixtures\template-approvalprocess.json
 Copy-Item spike\fixtures\tickettype-36.json spike\fixtures\template-tickettype.json
+Copy-Item spike\fixtures\workflow-9.json spike\fixtures\template-workflow.json
+Copy-Item spike\fixtures\outcome-11.json spike\fixtures\template-outcome.json
+Copy-Item spike\fixtures\status-28.json spike\fixtures\template-status.json
 ```
 
 Every template is deep-cleaned before use (`spike/lib/clean.ts`): copied Halo objects carry nested ids that point at other records, and posting them unchanged can modify existing config.

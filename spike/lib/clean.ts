@@ -8,6 +8,8 @@
  *   - sla.priorities[].id / slaid           → could overwrite an existing SLA's targets
  *   - tickettype.fields[].id / rtid         → could move field rows off an existing ticket type
  *   - access_control[].entity_id, translations[].entity_id → point at the source record
+ *   - outcome.workflows                     → would add a new action to every workflow the template is in
+ *   - workflow steps/actions flow_id, fdid  → point back at the template workflow
  *
  * Rule: drop every own-identity key (id, guid) at every depth, drop parent pointers,
  * and drop arrays that link the record to other records. Keep plain references the
@@ -15,9 +17,10 @@
  */
 
 const IDENTITY_KEYS = new Set(['id', 'guid', 'pk', 'published_id']);
-const PARENT_POINTER_KEYS = new Set(['rtid', 'slaid', 'processid', 'lookupid', 'entity_id', 'entity_id2', 'criteriagroup_id']);
+const PARENT_POINTER_KEYS = new Set(['rtid', 'slaid', 'processid', 'lookupid', 'entity_id', 'entity_id2', 'criteriagroup_id', 'flow_id', 'fdid']);
 const LINK_ARRAYS = new Set([
-  'tickettypes', //   fieldinfo → ticket types it's attached to
+  'tickettypes', //   fieldinfo/status/outcome → ticket types it's attached to
+  'workflows', //     outcome → workflows it's attached to (outcome-11 had 20)
   'fieldgroups', //   fieldinfo → groups it's in
   'outcomes',
   'access_control',

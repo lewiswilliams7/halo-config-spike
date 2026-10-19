@@ -5,8 +5,8 @@
  *   npm run build:onboarding -- --apply   really creates the objects (needs the .env safety switches)
  *   npm run build:onboarding -- --plan plans/other.json
  *
- * Per step: reuse an existing object by name, or create it from its template fixture,
- * then read it back to verify. Re-running is safe: anything that already exists
+ * Per step: reuse an existing object by name, create it from its template fixture, or update
+ * an existing one with a partial POST; then read it back to verify. Re-running is safe: anything that already exists
  * with the same name is reused, not duplicated. Stops at the first hard failure.
  */
 import {
@@ -46,14 +46,16 @@ for (const step of plan.steps) {
 }
 
 // 2. Run.
-type Outcome = 'reused' | 'already exists' | 'created' | 'would create' | 'failed';
+type Outcome = 'reused' | 'already exists' | 'created' | 'would create' | 'updated' | 'would update' | 'failed';
 const refs: Refs = {};
 const log: { step: string; object: string; outcome: Outcome; id?: unknown; warnings: string[]; payload?: unknown; error?: string }[] = [];
 
-async function findByName(resource: string, name: string): Promise<Record<string, unknown> | undefined> {
+const nameOf = (r: Record<string, unknown> | null | undefined, key = 'name') => String(r?.[key] ?? r?.name ?? '');
+
+async function findByName(resource: string, name: string, key = 'name'): Promise<Record<string, unknown> | undefined> {
   const rows = extractList(await haloGet(`/${resource}`));
   const want = name.trim().toLowerCase();
-  return rows.find((r) => String(r.name ?? '').trim().toLowerCase() === want || String(r.label ?? '').trim().toLowerCase() === want);
+  return rows.find((r) => [r[key], r.name, r.label].some((v) => String(v ?? '').trim().toLowerCase() === want));
 }
 
 for (const [i, step] of plan.steps.entries()) {
@@ -64,18 +66,40 @@ for (const [i, step] of plan.steps.entries()) {
 
   try {
     if (step.action === 'reuse') {
-      const found = await findByName(t.resource, step.match?.name ?? '');
+      const found = await findByName(t.resource, step.match?.name ?? '', t.nameKey);
       if (!found) throw new Error(`No ${t.resource} named "${step.match?.name}" to reuse. Create it in Halo first.`);
-      refs[step.id] = { id: found.id as number, name: String(found.name ?? '') };
+      refs[step.id] = { id: found.id as number, name: nameOf(found, t.nameKey) };
       log.push({ step: step.id, object: step.object, outcome: 'reused', id: found.id, warnings });
       console.log(`✓ ${label}  reused id ${found.id}`);
       continue;
     }
 
+    if (step.action === 'update') {
+      // Change properties on an existing record with a partial POST (proven safe, rule U0).
+      if (!t.update) throw new Error(`No update support for ${step.object}`);
+      const target = await findByName(t.resource, step.match?.name ?? '', t.nameKey);
+      if (!target) throw new Error(`No ${t.resource} named "${step.match?.name}" to update.`);
+      const changes = t.update(step, refs, warn);
+      refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey) };
+      if (!apply) {
+        log.push({ step: step.id, object: step.object, outcome: 'would update', id: target.id, warnings, payload: changes });
+        console.log(`· ${label}  would update id ${target.id}: ${JSON.stringify(changes)}`);
+      } else {
+        await haloPost(`/${t.resource}`, [{ id: target.id, ...changes }]);
+        const back = firstRecord(await haloGet(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+        const bad = Object.keys(changes).filter((k) => JSON.stringify(back[k]) !== JSON.stringify(changes[k]));
+        for (const k of bad) warn(`Update not saved: ${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(changes[k])}`);
+        log.push({ step: step.id, object: step.object, outcome: 'updated', id: target.id, warnings, payload: changes });
+        console.log(`~ ${label}  updated id ${target.id}${bad.length ? '' : ', verified'}`);
+      }
+      for (const w of warnings) console.log(`    ! ${w}`);
+      continue;
+    }
+
     const expectedName = t.storedName?.(step) ?? step.name ?? '';
-    const existing = await findByName(t.resource, expectedName);
+    const existing = await findByName(t.resource, expectedName, t.nameKey);
     if (existing) {
-      refs[step.id] = { id: existing.id as number, name: String(existing.name ?? '') };
+      refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey) };
       log.push({ step: step.id, object: step.object, outcome: 'already exists', id: existing.id, warnings });
       console.log(`= ${label}  already exists (id ${existing.id}), reused`);
       continue;
@@ -99,8 +123,8 @@ for (const [i, step] of plan.steps.entries()) {
 
       // Read back and check the name stuck: the cheapest proof it really saved.
       const back = firstRecord(await haloGet(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
-      const ok = String(back?.name ?? '') === expectedName;
-      if (!ok) warn(`Read-back mismatch: expected name "${expectedName}", got "${back?.name}"`);
+      const ok = nameOf(back, t.nameKey) === expectedName;
+      if (!ok) warn(`Read-back mismatch: expected name "${expectedName}", got "${nameOf(back, t.nameKey)}"`);
 
       log.push({ step: step.id, object: step.object, outcome: 'created', id: created.id, warnings, payload });
       console.log(`+ ${label}  created id ${created.id}${ok ? ', verified' : ''}`);

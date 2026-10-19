@@ -70,8 +70,8 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type';
-  action: 'create' | 'reuse';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow';
+  action: 'create' | 'reuse' | 'update';
   name?: string;
   label?: string;
   type?: string;
@@ -83,6 +83,20 @@ export interface PlanStep {
   team?: string;
   sla?: string;
   approval?: string;
+  /** status: SLA behaviour while in this status, e.g. 'hold'. Omit to keep the template's. */
+  sla_action?: string;
+  colour?: string;
+  /** outcome (action): ref of the status the ticket moves to. */
+  new_status?: string;
+  /** workflow: insert one new step after an existing one. */
+  insert_step?: {
+    name: string;
+    after_step: string; //                     existing step name in the template
+    enter_via: string; //                      outcome ref: action on after_step that moves into the new step
+    exits: { via: string; to_step: string }[]; // outcome refs: actions on the new step, to existing step names
+  };
+  /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
+  set?: { workflow?: string };
 }
 
 export interface Plan {
@@ -97,6 +111,10 @@ export interface Translator {
   storedName?: (step: PlanStep) => string;
   /** A real follow-up update to send straight after creating. Some objects only finish setting up on their first save. */
   afterCreate?: (id: number) => Record<string, unknown>;
+  /** Property holding the record's name, if not `name` (e.g. Outcome uses `outcome`). */
+  nameKey?: string;
+  /** For action 'update': the partial payload (without id) to send. */
+  update?: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -221,6 +239,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
   ticket_type: {
     resource: 'TicketType',
     template: 'template-tickettype.json',
+    update: (step, refs, warn) => {
+      const out: Record<string, unknown> = {};
+      if (step.set?.workflow) out.workflow_id = refs[step.set.workflow]?.id;
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
     build: (step, refs, warn) => {
       const p = fromTemplate('template-tickettype.json', 'TicketType');
       const m = SPIKE_MAP.ticketType;
@@ -257,11 +281,122 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return p;
     },
   },
+
+  status: {
+    // Evidence: status-28 (On Hold). name + shortname; slaaction 'hold' pauses the SLA.
+    resource: 'Status',
+    template: 'template-status.json',
+    build: (step) => {
+      const p = fromTemplate('template-status.json', 'Status');
+      p.name = step.name;
+      p.shortname = step.name;
+      if (step.sla_action !== undefined) p.slaaction = step.sla_action;
+      if (step.colour) p.colour = step.colour;
+      return p;
+    },
+  },
+
+  outcome: {
+    // "Outcome" = an action button. Evidence: outcome-11 (Re-Assign). Name lives in `outcome` and `buttonname`.
+    resource: 'Outcome',
+    template: 'template-outcome.json',
+    nameKey: 'outcome',
+    build: (step, refs) => {
+      const p = fromTemplate('template-outcome.json', 'Outcome');
+      p.outcome = step.name;
+      p.buttonname = step.name;
+      // Template is a system action: don't inherit its behaviour or its keyboard shortcut.
+      // INFERRED: systemid 0 = plain custom action (verify in NOTES.md).
+      p.systemid = 0;
+      p.hotkey = '';
+      p.newstatus = step.new_status ? refs[step.new_status]?.id : 0;
+      if (step.colour) p.colour = step.colour;
+      return p;
+    },
+  },
+
+  workflow: {
+    // Evidence: workflow-9. Internal links use LOCAL numbers (step_id, start_step/end_step, stage sequence),
+    // so a cleaned copy keeps them. Global ids (id, fdid, guid) and flow_id are stripped by clean.ts.
+    resource: 'Workflow',
+    template: 'template-workflow.json',
+    build: (step, refs, warn) => {
+      const p = fromTemplate('template-workflow.json', 'Workflow');
+      p.name = step.name;
+      const ins = step.insert_step;
+      if (!ins) return p;
+
+      type Row = Record<string, unknown>;
+      const steps = p.steps as Row[];
+      const stages = p.stages as Row[];
+      const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
+      const after = byName(ins.after_step);
+      if (!after) throw new Error(`Workflow template has no step named "${ins.after_step}"`);
+
+      const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
+      const newStage = Number(after.stage_number) + 1;
+
+      // Make room in the progress bar: shift later stages (and the steps on them) along by one.
+      for (const st of stages) if (Number(st.sequence) >= newStage) st.sequence = Number(st.sequence) + 1;
+      for (const s of steps) if (Number(s.stage_number) >= newStage) s.stage_number = Number(s.stage_number) + 1;
+      stages.push({ sequence: newStage, name: ins.name, edit_outcome: -1, type: 1 });
+      stages.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+
+      // Action rows copy the shape of an existing outcome action on the "after" step.
+      const actions = (after.actions as Row[]) ?? [];
+      const shape = actions.find((a) => Number(a.action_type) === 1) ?? actions[0] ?? {};
+      const action = (via: string, from: number, to: number, seq: number): Row => ({
+        ...shape,
+        action_type: 1,
+        action_id: refs[via]?.id,
+        action_name: refs[via]?.name ?? '',
+        action_outcome: '',
+        start_step: from,
+        end_step: to,
+        seq,
+        approval_result: -1,
+        conditions: [],
+        conditions_exec: [],
+        group_restrictions: [],
+      });
+
+      // Into the new step: an extra action on the "after" step.
+      actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
+      after.actions = actions;
+
+      // The new step itself, shaped like the "after" step, with its own exit actions.
+      const exits = ins.exits.map((e, i) => {
+        const target = byName(e.to_step);
+        if (!target) throw new Error(`Workflow template has no step named "${e.to_step}"`);
+        return action(e.via, newStepId, Number(target.step_id), i + 1);
+      });
+      steps.push({
+        ...after,
+        name: ins.name,
+        step_id: newStepId,
+        stage_number: newStage,
+        isstart: false,
+        isend: false,
+        islaststep: false,
+        actions: exits,
+      });
+
+      warn(`Designer layout (flow_chart_json) has no box for new step "${ins.name}"; check how Halo's designer shows it`);
+      return p;
+    },
+  },
 };
 
 /** Every ref a step points at, so the builder can check order before running. */
 export function refsOf(step: PlanStep): string[] {
-  return [step.team, step.sla, step.approval, ...(step.fields ?? []).map((f) => f.ref)].filter(
-    (r): r is string => Boolean(r),
-  );
+  return [
+    step.team,
+    step.sla,
+    step.approval,
+    step.new_status,
+    step.set?.workflow,
+    step.insert_step?.enter_via,
+    ...(step.insert_step?.exits ?? []).map((e) => e.via),
+    ...(step.fields ?? []).map((f) => f.ref),
+  ].filter((r): r is string => Boolean(r));
 }

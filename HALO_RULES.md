@@ -49,6 +49,11 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | U0 | Partial updates are safe: `POST [{ id, changedProp }]` leaves every other property alone (proven on FieldInfo 316). | Updates would need full objects and risk wiping config |
 | F6 | **A new field only works fully after one real save following creation.** Without it, dropdowns show no options even though the values exist and reach the form. Create, then send one real partial update (the builder sets a placeholder `summary` and clears it). An update that changes nothing (e.g. an ignored property) does NOT count. `visibility` turned out to be a red herring. | Dropdowns show no options | `translators.ts` `afterCreate`, `build-onboarding.ts` |
 
+| W1 | Workflow links are LOCAL: `steps[].step_id`, `actions[].start_step/end_step`, `stage_number` → `stages[].sequence`. Copy them as-is; strip only global ids (`id`, `fdid`, `guid`) and the parent pointer `flow_id`. | Copy cut off from its own steps, or steps attached to the template workflow | `clean.ts`, `translators.ts` workflow |
+| W2 | To add a step: next free `step_id`, insert a stage and shift later stages' `sequence` and steps' `stage_number` by one; add an entry action on the step before and exit actions on the new step. | Broken progress bar; unreachable step | `translators.ts` workflow `insert_step` |
+| O1 | Outcomes (actions) keep their name in `outcome` + `buttonname`, not `name`. `newstatus` = status id to move to. | Can't find or verify actions | `translators.ts` outcome `nameKey` |
+| O2 | Copied outcomes carry `workflows: [...]` (attach to every workflow), `systemid` (system behaviour) and `hotkey`. Strip/reset all three. | New action appears in 20 workflows; behaves like the template's system action | `clean.ts`, `translators.ts` outcome |
+
 ## After a build
 
 | # | Rule | Without it |
