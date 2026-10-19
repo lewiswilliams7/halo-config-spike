@@ -153,6 +153,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
       p.defaultvalue = '';
+      delete p.defaultvalue_lookup; // e.g. "Standard Laptop" from the dropdown template
 
       const code = step.type ? SPIKE_MAP.fieldTypes[step.type] : null;
       if (code === null || code === undefined) warn(`SPIKE_MAP gap: no type code for "${step.type}"; template's type kept`);
