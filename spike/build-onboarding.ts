@@ -97,7 +97,9 @@ for (const [i, step] of plan.steps.entries()) {
     if (step.action === 'reuse') {
       const found = await findByName(t.resource, step.match?.name ?? '', t.nameKey);
       if (!found) throw new Error(`No ${t.resource} named "${step.match?.name}" to reuse. Create it in Halo first.`);
-      refs[step.id] = { id: found.id as number, name: nameOf(found, t.nameKey) };
+      // Keep the full record so later steps can copy settings from it (e.g. a team's department, rule T3).
+      const row = firstRecord(await haloGet(`/${t.resource}/${found.id}`, { includedetails: 'true' })) ?? found;
+      refs[step.id] = { id: found.id as number, name: nameOf(found, t.nameKey), row };
       log.push({ step: step.id, object: step.object, outcome: 'reused', id: found.id, warnings });
       console.log(`✓ ${label}  reused id ${found.id}`);
       continue;

@@ -26,14 +26,35 @@
       }
     },
     {
+      "id": "team_hr",
+      "object": "team",
+      "action": "reuse",
+      "match": {
+        "name": "Human Resources"
+      }
+    },
+    {
       "id": "team_people",
       "object": "team",
       "action": "create",
       "name": "People Operations",
+      "based_on": "Human Resources",
+      "department_of": "team_hr",
       "members": [
         "ag_kaleem",
         "ag_jennifer"
       ]
+    },
+    {
+      "id": "team_people_dept",
+      "object": "team",
+      "action": "update",
+      "match": {
+        "name": "People Operations"
+      },
+      "set": {
+        "department_of": "team_hr"
+      }
     },
     {
       "id": "grp_people",
@@ -575,7 +596,8 @@
     "Line manager approval fails for requesters with no manager set in Halo (rule P4). Check managers are populated before go-live.",
     "Leaver is based on the existing Leaver Request type and keeps whatever approval/workflow that type already has.",
     "Dismissal leavers aren't automatically made Critical: agents set priority Critical to get the 4-hour target.",
-    "Ticket types are based on New Starter Request, Employee Transfer Request and Leaver Request; SLAs and approvals on Service Request SLA and Line Manager Approval Process."
+    "Ticket types are based on New Starter Request, Employee Transfer Request and Leaver Request; SLAs and approvals on Service Request SLA and Line Manager Approval Process.",
+    "People Operations sits in the same department as Human Resources and copies that team's settings."
   ],
   "unsupported": [
     "Contract end date only appearing/required when contract type is Contractor (conditional field visibility): built as an optional field instead.",

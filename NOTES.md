@@ -96,3 +96,9 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - [ ] `npm run build:onboarding -- --apply` builds everything, all verified
 - [ ] Screen-record: the request text → the run → the new ticket type in Halo, raised as a user
 - [ ] Voiceover, under 90 seconds
+
+## 2026-10-19: enterprise JML test (gethandoveruk)
+
+- 47 steps built and verified on the real instance: team, 2 approval groups, 22 fields, 4 field groups, 3 SLAs, 2 approval processes, 3 actions, a two-stage inserted workflow, 3 ticket types.
+- People Operations "missing": it was created (id 12) but in department "Handover - IT" (3), copied from template team 1st Line Support, and with live chat on. Rule T3: copy from a team in the right department (`based_on`) and set `department_of`.
+- New Joiner (57) vs New Starter Request (17): no field points back at 17 (initial_status 17 is a status id). New Joiner has its own two field groups (33, 34), its own workflow, SLA, approval and team. If a "New Joiner" link opens the New Starter form, it isn't the ticket type; still to find where the link lives.

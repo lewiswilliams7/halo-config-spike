@@ -65,11 +65,22 @@ export const SPIKE_MAP = {
   },
 };
 
+function departmentOf(ref: string, refs: Refs, warn: (m: string) => void): Record<string, unknown> {
+  const row = refs[ref]?.row;
+  if (row?.department_id === undefined) {
+    warn(`department_of: "${ref}" has no department to copy (reuse a team for it)`);
+    return {};
+  }
+  return { department_id: row.department_id };
+}
+
 // ---------- plan types ----------
 
 export interface Ref {
   id: number | string;
   name?: string;
+  /** Full record of a reused object (detail read), so later steps can copy settings from it. */
+  row?: Record<string, unknown>;
 }
 export type Refs = Record<string, Ref>;
 
@@ -112,7 +123,9 @@ export interface PlanStep {
   /** approval_process: approval stages in order. Each stage is ONE of these (rule P1). */
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
-  set?: { workflow?: string; approval?: string };
+  set?: { workflow?: string; approval?: string; department_of?: string };
+  /** team: put the team in the same department as this reused team (step ref). Rule T3. */
+  department_of?: string;
 }
 
 export interface InsertStep {
@@ -205,13 +218,22 @@ export const translators: Record<PlanStep['object'], Translator> = {
   team: {
     resource: 'Team',
     template: 'template-team.json',
-    build: (step, refs) => {
+    build: (step, refs, warn) => {
       // Evidence: team-6. Members are agents[] rows { agent_id }; the template's members are dropped.
       const p = fromTemplate(templateFileFor(step, 'template-team.json'), 'Team');
       p.name = step.name;
       p.agents = (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id }));
       p.managers = [];
+      // Rule T3 (2026-10-19): a team's department comes from whatever template it was copied from
+      // (People Operations landed in "IT" via 1st Line Support). Take it from a named team instead.
+      if (step.department_of) Object.assign(p, departmentOf(step.department_of, refs, warn));
       return p;
+    },
+    update: (step, refs, warn) => {
+      const out: Record<string, unknown> = {};
+      if (step.set?.department_of) Object.assign(out, departmentOf(step.set.department_of, refs, warn));
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
     },
   },
 
@@ -530,6 +552,8 @@ export function refsOf(step: PlanStep): string[] {
     step.new_status,
     step.set?.workflow,
     step.set?.approval,
+    step.set?.department_of,
+    step.department_of,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
     ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     ...(step.fields ?? []).map((f) => f.ref),
