@@ -15,7 +15,7 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 | Status | `/Status` | | | | | |
 | Priority | `/Priority` | | | | | |
 | SLA | `/SLA` | | | | | |
-| Custom field | `/Field`, `/FieldInfo` | | | | | |
+| Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | | | | | |
 | Field group | `/FieldGroup` | | | | | |
 | Category | `/Category` | | | | | |
 | Approval process | `/ApprovalProcess` | | | | | |
@@ -29,6 +29,7 @@ Result = **works** / **partial** / **blocked**.
 
 - **2026-10-19:** Auth works. Client credentials token, scope includes `all`, expires in 32400s (9 hours).
 - **2026-10-19:** `GET /Field` returns **asset fields** (IP Address, Serial Number, RAM…), not ticket custom fields. Ticket custom fields are expected under `/FieldInfo`. To confirm before changing the field translator.
+- **2026-10-19:** Confirmed: ticket custom fields are **`/FieldInfo`** (416 records, `CF…` names). Negative ids are Halo system fields. Field translator now targets FieldInfo.
 - **2026-10-19:** Trial has no "HR" team. Plan now reuses **Human Resources (id 6)**.
 - **2026-10-19:** Template candidates: ticket type **HR Onboarding (36)**, approval process **Line Manager Approval Process (4)**, SLA **Service Request SLA (3)**.
 

@@ -115,10 +115,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   field: {
-    resource: 'Field',
+    // Ticket custom fields are FieldInfo. /Field is asset fields (see NOTES.md, 2026-10-19).
+    resource: 'FieldInfo',
     template: 'template-field.json',
     build: (step, _ids, warn) => {
-      const p = fromTemplate('template-field.json', 'Field');
+      const p = fromTemplate('template-field.json', 'FieldInfo');
       p.name = step.name;
       set(p, SPIKE_MAP.field.label, step.label, 'field label', warn);
       const code = step.type ? SPIKE_MAP.fieldTypes[step.type] : null;
