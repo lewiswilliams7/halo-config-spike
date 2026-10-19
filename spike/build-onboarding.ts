@@ -107,6 +107,16 @@ for (const [i, step] of plan.steps.entries()) {
       // Change properties on an existing record with a partial POST (proven safe, rule U0).
       if (!t.update) throw new Error(`No update support for ${step.object}`);
       const target = await findByName(t.resource, step.match?.name ?? '', t.nameKey);
+      if (!target && !apply) {
+        // Dry run: the target may be created by an earlier step of this plan, so it doesn't exist yet.
+        const madeEarlier = plan.steps.some((s) => s.object === step.object && s.action === 'create' && String(s.name).toLowerCase() === String(step.match?.name).toLowerCase());
+        if (madeEarlier) {
+          refs[step.id] = refs[step.id] ?? { id: 0, name: step.match?.name ?? '' };
+          log.push({ step: step.id, object: step.object, outcome: 'would update', warnings });
+          console.log(`· ${label}  would update (created earlier in this plan)`);
+          continue;
+        }
+      }
       if (!target) throw new Error(`No ${t.resource} named "${step.match?.name}" to update.`);
       const changes = t.update(step, refs, warn);
       refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey) };
