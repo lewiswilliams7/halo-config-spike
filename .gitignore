@@ -10,3 +10,6 @@ spike/runs/*.json
 !spike/runs/.gitkeep
 
 .DS_Store
+
+# Shared fixture bundle: real instance data
+SEND-TO-CLAUDE.txt
