@@ -89,9 +89,9 @@ export function haloGet<T = unknown>(path: string, params?: Record<string, strin
 }
 
 /** Every write goes through here. Refuses unless both safety switches in .env are set. */
-export function haloPost<T = unknown>(path: string, body: unknown): Promise<T> {
+export function haloPost<T = unknown>(path: string, body: unknown, params?: Record<string, string>): Promise<T> {
   assertWritesAllowed();
-  return request<T>('POST', path, body);
+  return request<T>('POST', path, body, params);
 }
 
 export function assertWritesAllowed(): void {

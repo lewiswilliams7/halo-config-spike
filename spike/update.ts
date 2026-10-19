@@ -3,6 +3,7 @@
  *
  *   npm run update -- FieldInfo 316 visibility=1
  *   npm run update -- FieldInfo 316 visibility=1 inputtype=0
+ *   npm run update -- FieldInfo 316 visibility=1 ?is_config=true      args starting with ? are query flags
  *
  * Values are parsed as numbers / true / false where they look like one, otherwise strings.
  * Reads the record back afterwards and shows before → after for each property changed.
@@ -10,9 +11,13 @@
 import { firstRecord, haloGet, haloPost, saveJson, timestamp } from './lib/halo.js';
 
 const args = process.argv.slice(2);
-const [resource, id] = args.filter((a) => !a.includes('='));
+const query: Record<string, string> = Object.fromEntries(
+  args.filter((a) => a.startsWith('?')).map((a) => a.slice(1).split('=', 2) as [string, string]),
+);
+const plain = args.filter((a) => !a.startsWith('?'));
+const [resource, id] = plain.filter((a) => !a.includes('='));
 const changes: Record<string, unknown> = {};
-for (const a of args.filter((x) => x.includes('='))) {
+for (const a of plain.filter((x) => x.includes('='))) {
   const [k, raw] = a.split('=', 2) as [string, string];
   changes[k] = raw === 'true' ? true : raw === 'false' ? false : raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw;
 }
@@ -23,8 +28,8 @@ if (!resource || !id || !Object.keys(changes).length) {
 }
 
 const before = firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' })) ?? {};
-console.log(`\nPOST /${resource} update id ${id}: ${JSON.stringify(changes)}`);
-const response = await haloPost(`/${resource}`, [{ id: Number(id), ...changes }]);
+console.log(`\nPOST /${resource} update id ${id}: ${JSON.stringify(changes)}${Object.keys(query).length ? `  query ${JSON.stringify(query)}` : ''}`);
+const response = await haloPost(`/${resource}`, [{ id: Number(id), ...changes }], query);
 const after = firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' })) ?? {};
 
 for (const k of Object.keys(changes)) {
