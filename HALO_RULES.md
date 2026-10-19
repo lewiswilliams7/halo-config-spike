@@ -30,6 +30,8 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | S3 | Read every object back after creating it and compare with the plan. | Silent partial saves | `build-onboarding.ts` |
 | S4 | Replace display-name fields copied from a template (e.g. `approval_process_name`) with the real linked name. | Config screens show the template's names | `translators.ts` ticket_type |
 | S5 | Stop at the first hard failure. Never continue a build on a broken dependency. | Half-built config pointing at nothing | `build-onboarding.ts` |
+| S7 | **Pre-flight before any write**: resolve every existing object the plan reuses or updates first. If any is missing, write nothing. | Half-built config: a run created a status and an action, then stopped on a lookup | `build-onboarding.ts` pre-flight |
+| S8 | Look names up across all name-like properties (`name`, `label`, `buttonname`, `outcome`): list rows and full records don't always use the same one. | "Not found" for objects that exist (Outcome list has only `buttonname`) | `build-onboarding.ts` `findByName` |
 | S6 | Never delete anything. | Irreversible damage to a live service desk | (none, by design) |
 
 ## Object-specific rules

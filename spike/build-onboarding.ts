@@ -55,8 +55,29 @@ const nameOf = (r: Record<string, unknown> | null | undefined, key = 'name') => 
 async function findByName(resource: string, name: string, key = 'name'): Promise<Record<string, unknown> | undefined> {
   const rows = extractList(await haloGet(`/${resource}`));
   const want = name.trim().toLowerCase();
-  return rows.find((r) => [r[key], r.name, r.label].some((v) => String(v ?? '').trim().toLowerCase() === want));
+  // List rows don't always carry the same name property as the full record
+  // (Outcome lists have `buttonname`, full records also have `outcome`), so check all of them.
+  return rows.find((r) =>
+    [r[key], r.name, r.label, r.buttonname, r.outcome].some((v) => String(v ?? '').trim().toLowerCase() === want),
+  );
 }
+
+// Pre-flight: everything the plan must FIND (reuse/update targets) has to exist before ANYTHING is written.
+// Rule S7 (2026-10-19): a run wrote two objects, then failed on a lookup it could have checked up front.
+const createdInPlan = new Set(plan.steps.filter((s) => s.action === 'create').map((s) => `${s.object}:${(s.name ?? '').toLowerCase()}`));
+const missing: string[] = [];
+for (const step of plan.steps) {
+  if (step.action !== 'reuse' && step.action !== 'update') continue;
+  const t = translators[step.object];
+  const want = step.match?.name ?? '';
+  if (createdInPlan.has(`${step.object}:${want.toLowerCase()}`)) continue;
+  if (!(await findByName(t.resource, want, t.nameKey))) missing.push(`${step.id}: no ${t.resource} named "${want}"`);
+}
+if (missing.length) {
+  console.error(`Pre-flight failed. Nothing was written.\n  ${missing.join('\n  ')}\n`);
+  process.exit(1);
+}
+console.log('Pre-flight OK: everything the plan needs to find exists.\n');
 
 for (const [i, step] of plan.steps.entries()) {
   const t = translators[step.object];
