@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "diff": "tsx spike/diff.ts",
     "update": "tsx spike/update.ts",
-    "scan": "tsx spike/scan.ts"
+    "scan": "tsx spike/scan.ts",
+    "labelcheck": "tsx spike/labelcheck.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"
