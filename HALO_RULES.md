@@ -68,4 +68,4 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 
 | # | Rule | Without it |
 |---|---|---|
-| U1 | Tell the user to **refresh Halo (Ctrl+F5)**. New field labels show as `!#?UnknownString?#!` until the browser reloads Halo's label cache. | Looks broken when it isn't |
+| U1 | After a build, tell the user to **reload Halo (F5)**. Labels for new fields are in Halo's language pack on the server immediately (proven: `labelcheck` showed field_320 straight after creation), but the browser loads that pack once per page load (single-page app), so screens show `!#?UnknownString?#!` until a full reload. No log-out needed. | Looks broken when it isn't |
