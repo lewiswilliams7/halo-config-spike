@@ -47,7 +47,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | P1 | Approval step `type` **10** = requester's line manager (inferred from "Line Manager Approval Process"; confirm). | Wrong approver | `SPIKE_MAP.approval` |
 
 | U0 | Partial updates are safe: `POST [{ id, changedProp }]` leaves every other property alone (proven on FieldInfo 316). | Updates would need full objects and risk wiping config |
-| F6 | ⚠️ OPEN: API-created dropdowns show no options on the form. The values reach the browser (HAR), but the field has no `visibility`, and Halo ignores `visibility` on both create and update. Under investigation. | Dropdowns unusable |
+| F6 | **A new field only works fully after one real save following creation.** Without it, dropdowns show no options even though the values exist and reach the form. Create, then send one real partial update (the builder sets a placeholder `summary` and clears it). An update that changes nothing (e.g. an ignored property) does NOT count. `visibility` turned out to be a red herring. | Dropdowns show no options | `translators.ts` `afterCreate`, `build-onboarding.ts` |
 
 ## After a build
 

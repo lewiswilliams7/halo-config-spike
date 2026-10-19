@@ -95,6 +95,8 @@ export interface Translator {
   template: string; // file in fixtures/
   /** The name Halo will actually store, if it differs from what we send. Used to find and verify. */
   storedName?: (step: PlanStep) => string;
+  /** A real follow-up update to send straight after creating. Some objects only finish setting up on their first save. */
+  afterCreate?: (id: number) => Record<string, unknown>;
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -110,6 +112,8 @@ function fromTemplate(file: string, resource: string): Record<string, unknown> {
   }
   return cleanForCreate(loadJson<Record<string, unknown>>(`fixtures/${file}`));
 }
+
+export const FIELD_SUMMARY_PLACEHOLDER = 'created by builder';
 
 /** "CFOnboardStartDate" → "OnboardStartDate". Halo adds the CF back. */
 export function bareFieldName(name = ''): string {
@@ -140,6 +144,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
     template: 'template-field.json',
     // Halo prefixes custom field names with "CF" itself: sending "CFx" stores "CFCFx" (2026-10-19, field 310).
     storedName: (step) => `CF${bareFieldName(step.name)}`,
+    // Rule F6 (2026-10-19): a field created via the API only works fully (dropdown options show)
+    // after one real save. Create with a placeholder summary, then clear it: a real change, clean result.
+    afterCreate: (id) => ({ id, summary: '' }),
     build: (step, _refs, warn) => {
       // Prefer a template of the same field type: each type carries its own defaults.
       // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
@@ -152,6 +159,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
+      p.summary = FIELD_SUMMARY_PLACEHOLDER; // cleared by afterCreate (rule F6)
       p.defaultvalue = '';
       delete p.defaultvalue_lookup; // e.g. "Standard Laptop" from the dropdown template
 

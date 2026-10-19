@@ -92,6 +92,11 @@ for (const [i, step] of plan.steps.entries()) {
       if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
       refs[step.id] = { id: created.id as number, name: expectedName };
 
+      // Rule F6: some objects only finish setting up on their first real save after creation.
+      if (t.afterCreate) {
+        await haloPost(`/${t.resource}`, [t.afterCreate(created.id as number)]);
+      }
+
       // Read back and check the name stuck: the cheapest proof it really saved.
       const back = firstRecord(await haloGet(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
       const ok = String(back?.name ?? '') === expectedName;
