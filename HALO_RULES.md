@@ -48,6 +48,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | A1 | SLA targets are per priority: set `priorities[].fixtime` + `fixunits` (`H` or `D`) on every row. Reuse an existing `workday_id`. | SLA created with the template's targets | `translators.ts` sla |
 | P1 | Approval step `type`: **10** line manager, **1** named agent, **3** approval group (CAB) + `minapprovers`, **8** ad-hoc, **42** change CAB. Approver id goes in `agent_id_or_cab_id`. Multi-stage = more steps by `sequence`. | Wrong approver | `SPIKE_MAP.approval` |
 | P2 | Teams can't approve; approval groups (CABs) do. Map "the HR team approves" to an approval group, and create one if needed. | Plan asks for something Halo can't express | planner |
+| P4 | **A line-manager approval stage errors ("Step 0") when the requester has no line manager**; it does not skip. Proven by A/B: same 2-stage process with a named agent instead works. Before building one, check how many users lack a manager and warn, or add a fallback approver. | Live tickets stuck in a broken approval | planner pre-build check (to build) |
 | P3 | Ignore `agent_name`/`cab_name` when reading approval steps: Halo fills both from the same id whatever the type. Read `type` + `agent_id_or_cab_id`. | Misreading who approves (shows an agent AND a group) | (reader, to build) |
 
 | U0 | Partial updates are safe: `POST [{ id, changedProp }]` leaves every other property alone (proven on FieldInfo 316). | Updates would need full objects and risk wiping config |

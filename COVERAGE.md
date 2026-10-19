@@ -17,7 +17,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Workflows (copy, add a step and stage) | ✅ | W1, W2. Designer box TBC. Remove/reorder steps not done |
 | SLAs (targets per priority) | ✅ | A1. Workdays reused, not created |
 | Approval processes: line manager | ✅ | P1 |
-| Approval processes: named agent, approval group, ad-hoc, multi-stage | 🧪 | P1–P3; `plans/approval-test.json`. Roles not mapped |
+| Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
 | Approval groups (CABs) | 🧪 | Reuse works via `/CAB`; create needs a template |
 | Teams | 🧪 | Reused so far, never created |
 | Categories | ⬜ | `POST /Category` exists |
@@ -49,6 +49,16 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Contracts, billing, invoicing (PSA) | ⬜ | |
 | Portal layout and branding | ⬜ | |
 | AI / MCP configuration | ⬜ | |
+
+## Pre-build checks (the "consultant" layer)
+
+Before building, check the customer's own data can support the plan, and suggest a fix when it can't.
+
+| Check | Why | Status |
+|---|---|---|
+| Line-manager approval → how many users have no manager? | Their approvals error (P4) | ⬜ |
+| Named agent / group approver → do they exist and are they active? | Approvals go nowhere | 🧪 pre-flight finds them |
+| New field name → clashes with an existing field? | Confusing duplicates | ⬜ |
 
 ## Rule for the product
 
