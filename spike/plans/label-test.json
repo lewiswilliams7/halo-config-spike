@@ -1,0 +1,7 @@
+{
+  "request": "Label cache test: one new text field on a new ticket type.",
+  "steps": [
+    { "id": "f_label", "object": "field", "action": "create", "name": "CFLabelTest1", "label": "Label test one", "type": "text" },
+    { "id": "tt_label", "object": "ticket_type", "action": "create", "name": "Label Test", "based_on": "HR Onboarding", "fields": [{ "ref": "f_label" }] }
+  ]
+}
