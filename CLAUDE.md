@@ -15,6 +15,10 @@ This repo is a spike testing whether Halo configuration can be created through t
 - Payloads start from template fixtures captured from real Halo objects, so the shape is Halo's own. Only override what the plan specifies.
 - Unknown payload details live in `SPIKE_MAP` as `null`. Fill them from evidence in fixtures, never from guesses, and record the finding in `NOTES.md`.
 
+## Halo rules
+
+`HALO_RULES.md` lists every Halo quirk found so far and the rule that handles it. Read it before changing any translator or the clean step. Every rule there must carry over into the product. When Halo surprises us, add a rule.
+
 ## Workflow
 
 Audit first, then implement: read the relevant files and report what you'd change before changing anything.
