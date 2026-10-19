@@ -29,7 +29,11 @@ console.log(`\nSaved ${file}`);
 if (!id) {
   const rows = extractList(data);
   console.log(`${rows.length} ${resource} record(s):`);
-  for (const row of rows) console.log(`  ${String(row.id).padStart(5)}  ${row.name ?? row.label ?? ''}`);
+  // Not every resource calls its name `name` (e.g. Outcome). Fall back to the first likely label.
+  const label = (row: Record<string, unknown>) =>
+    row.name ?? row.label ?? row.buttonname ?? row.outcome ?? row.description ?? row.text ??
+    Object.entries(row).find(([k, v]) => typeof v === 'string' && v && !/guid|colour|color|icon/i.test(k))?.[1] ?? '';
+  for (const row of rows) console.log(`  ${String(row.id).padStart(5)}  ${label(row)}`);
 } else {
   const keys = data && typeof data === 'object' ? Object.keys(data) : [];
   console.log(`${keys.length} properties. Open the file to see the payload shape.`);
