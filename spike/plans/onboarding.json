@@ -1,0 +1,31 @@
+{
+  "request": "Create an employee onboarding process. Ticket type Employee Onboarding with fields for employee name, start date, department and equipment required. Department and start date mandatory. Assign to HR, manager approval, five-day SLA.",
+  "steps": [
+    { "id": "team_hr", "object": "team", "action": "reuse", "match": { "name": "HR" } },
+
+    { "id": "f_name", "object": "field", "action": "create", "name": "CFOnboardEmployeeName", "label": "Employee name", "type": "text" },
+    { "id": "f_start", "object": "field", "action": "create", "name": "CFOnboardStartDate", "label": "Start date", "type": "date" },
+    { "id": "f_dept", "object": "field", "action": "create", "name": "CFOnboardDepartment", "label": "Department", "type": "dropdown", "options": ["HR", "IT", "Finance"] },
+    { "id": "f_equip", "object": "field", "action": "create", "name": "CFOnboardEquipment", "label": "Equipment required", "type": "memo" },
+
+    { "id": "sla_5d", "object": "sla", "action": "create", "name": "Onboarding - 5 working days", "resolve_days": 5 },
+
+    { "id": "appr_mgr", "object": "approval_process", "action": "create", "name": "Line manager approval", "approver": "requester_manager" },
+
+    {
+      "id": "tt_onboard",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "Employee Onboarding",
+      "fields": [
+        { "ref": "f_name" },
+        { "ref": "f_start", "mandatory": true },
+        { "ref": "f_dept", "mandatory": true },
+        { "ref": "f_equip" }
+      ],
+      "team": "team_hr",
+      "sla": "sla_5d",
+      "approval": "appr_mgr"
+    }
+  ]
+}
