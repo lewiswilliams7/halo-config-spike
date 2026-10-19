@@ -126,6 +126,8 @@ export interface PlanStep {
   set?: { workflow?: string; approval?: string; department_of?: string };
   /** team: put the team in the same department as this reused team (step ref). Rule T3. */
   department_of?: string;
+  /** outcome: Font Awesome icon name for the action button (default arrow-right). Rule O3. */
+  icon?: string;
 }
 
 export interface InsertStep {
@@ -457,6 +459,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.shortname = step.name;
       if (step.sla_action !== undefined) p.slaaction = step.sla_action;
       if (step.colour) p.colour = step.colour;
+      // Rule O3 (2026-10-19): the icon comes from the template action. On gethandoveruk that was
+      // "Triage Not Required", so every new forward action showed an X. Use the plan's icon, or a neutral one.
+      // Evidence for the property: outcome-11 has icon "users" (a Font Awesome name).
+      p.icon = step.icon ?? 'arrow-right';
       return p;
     },
   },
