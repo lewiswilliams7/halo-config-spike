@@ -40,9 +40,14 @@ export const SPIKE_MAP = {
   },
 
   approval: {
-    /** steps[].type. INFERRED: 10 = requester's line manager, from "Line Manager Approval Process" (id 4). */
+    /** steps[].type. Evidence: approval processes 1,2,3,4,7,8 (NOTES.md 2026-10-19). */
     steps: 'steps' as string | null,
     lineManagerStepType: 10 as number | null,
+    agentStepType: 1,
+    groupStepType: 3,
+    adhocStepType: 8,
+    approverIdKey: 'agent_id_or_cab_id',
+    minApproversKey: 'minapprovers',
   },
 
   ticketType: {
@@ -70,7 +75,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   label?: string;
@@ -95,9 +100,17 @@ export interface PlanStep {
     enter_via: string; //                      outcome ref: action on after_step that moves into the new step
     exits: { via: string; to_step: string }[]; // outcome refs: actions on the new step, to existing step names
   };
+  /** approval_process: approval stages in order. Each stage is ONE of these (rule P1). */
+  approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
-  set?: { workflow?: string };
+  set?: { workflow?: string; approval?: string };
 }
+
+export type Approver =
+  | { line_manager: true } //                 type 10
+  | { agent: string } //                      type 1, ref to an agent step
+  | { group: string; min?: number } //        type 3, ref to an approval_group step
+  | { adhoc: true }; //                       type 8, agent picks at the time
 
 export interface Plan {
   request: string;
@@ -220,18 +233,56 @@ export const translators: Record<PlanStep['object'], Translator> = {
   approval_process: {
     resource: 'ApprovalProcess',
     template: 'template-approvalprocess.json',
-    build: (step, _refs, warn) => {
+    build: (step, refs, warn) => {
       const p = fromTemplate('template-approvalprocess.json', 'ApprovalProcess');
       const m = SPIKE_MAP.approval;
       p.name = step.name;
-      if (step.approver === 'requester_manager') {
-        const steps = m.steps ? (p[m.steps] as Record<string, unknown>[] | undefined) : undefined;
-        if (!steps?.length || m.lineManagerStepType === null) {
-          warn(`SPIKE_MAP gap: don't know how to express "line manager" approval yet; skipped`);
-        } else {
-          p[m.steps as string] = [{ ...steps[0], sequence: 1, type: m.lineManagerStepType }];
-        }
+      const approvers: Approver[] =
+        step.approvers ?? (step.approver === 'requester_manager' ? [{ line_manager: true }] : []);
+      if (!approvers.length) return p;
+
+      const steps = m.steps ? (p[m.steps] as Record<string, unknown>[] | undefined) : undefined;
+      if (!steps?.length) {
+        warn(`Approval template has no steps to copy the shape from; approvers skipped`);
+        return p;
       }
+      const shape = steps[0];
+      p[m.steps as string] = approvers.map((a, i) => {
+        // Rule P3: agent_name/cab_name are display labels Halo fills from the id; never copy them.
+        const row: Record<string, unknown> = { ...shape, sequence: i + 1, name: '', agent_name: '', cab_name: '' };
+        if ('line_manager' in a) row.type = m.lineManagerStepType;
+        else if ('adhoc' in a) row.type = m.adhocStepType;
+        else if ('agent' in a) {
+          row.type = m.agentStepType;
+          row[m.approverIdKey] = refs[a.agent]?.id;
+        } else if ('group' in a) {
+          row.type = m.groupStepType;
+          row[m.approverIdKey] = refs[a.group]?.id;
+          row[m.minApproversKey] = a.min ?? 1;
+        }
+        return row;
+      });
+      return p;
+    },
+  },
+
+  agent: {
+    // Reuse only: plans name existing people. Evidence: GET /Agent lists agents by name.
+    resource: 'Agent',
+    template: '',
+    build: () => {
+      throw new Error('Creating agents is not supported: they are people with licences. Reuse an existing agent.');
+    },
+  },
+
+  approval_group: {
+    // Halo calls approval groups CABs. Evidence: GET /CAB lists "Human Resource Approval Group" etc.
+    // Reuse only for now; creating one needs a template fixture (GET /CAB/<id>).
+    resource: 'CAB',
+    template: 'template-cab.json',
+    build: (step) => {
+      const p = fromTemplate('template-cab.json', 'CAB');
+      p.name = step.name;
       return p;
     },
   },
@@ -242,6 +293,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     update: (step, refs, warn) => {
       const out: Record<string, unknown> = {};
       if (step.set?.workflow) out.workflow_id = refs[step.set.workflow]?.id;
+      if (step.set?.approval) out.approval_process_id = refs[step.set.approval]?.id;
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
@@ -395,6 +447,8 @@ export function refsOf(step: PlanStep): string[] {
     step.approval,
     step.new_status,
     step.set?.workflow,
+    step.set?.approval,
+    ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
     step.insert_step?.enter_via,
     ...(step.insert_step?.exits ?? []).map((e) => e.via),
     ...(step.fields ?? []).map((f) => f.ref),

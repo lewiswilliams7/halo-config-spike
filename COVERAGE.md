@@ -17,7 +17,8 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Workflows (copy, add a step and stage) | ✅ | W1, W2. Designer box TBC. Remove/reorder steps not done |
 | SLAs (targets per priority) | ✅ | A1. Workdays reused, not created |
 | Approval processes: line manager | ✅ | P1 |
-| Approval processes: named agent, team, role | ⬜ | **Next** |
+| Approval processes: named agent, approval group, ad-hoc, multi-stage | 🧪 | P1–P3; `plans/approval-test.json`. Roles not mapped |
+| Approval groups (CABs) | 🧪 | Reuse works via `/CAB`; create needs a template |
 | Teams | 🧪 | Reused so far, never created |
 | Categories | ⬜ | `POST /Category` exists |
 | Priorities | ⬜ | Usually reused |

@@ -1,0 +1,14 @@
+{
+  "request": "Onboarding requests need approval from the HR approval group first, then the requester's line manager.",
+  "steps": [
+    { "id": "grp_hr", "object": "approval_group", "action": "reuse", "match": { "name": "Human Resource Approval Group" } },
+    {
+      "id": "appr_onboard",
+      "object": "approval_process",
+      "action": "create",
+      "name": "Onboarding approval (HR group, then line manager)",
+      "approvers": [{ "group": "grp_hr", "min": 1 }, { "line_manager": true }]
+    },
+    { "id": "tt_onboard", "object": "ticket_type", "action": "update", "match": { "name": "Employee Onboarding" }, "set": { "approval": "appr_onboard" } }
+  ]
+}
