@@ -12,7 +12,7 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 | Object | Endpoint | GET works | POST creates | Correct in UI | Result | Payload notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | Team | `/Team` | ✅ | (reused) | ✅ | works | |
-| Status | `/Status` | | | | | |
+| Status | `/Status` | ✅ | ✅ | ✅ | works | |
 | Priority | `/Priority` | | | | | |
 | SLA | `/SLA` | ✅ | ✅ | ✅ | works | targets per priority |
 | Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | ✅ | ✅ | ✅ | works | `CF` prefix added by Halo; needs one save after create (F6) |
@@ -21,7 +21,7 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 | Approval process | `/ApprovalProcess` | ✅ | ✅ | ✅ | works | step type 10 = line manager |
 | Approval rule | `/ApprovalProcessRule` | | | | | |
 | Ticket type | `/TicketType` | ✅ | ✅ | ✅ | works | team by name; fields[] with mandatory 3 |
-| Workflow (v2, look only) | `/Workflow` | | | | | |
+| Workflow | `/Workflow` | ✅ | ✅ | ✅ | works | copy + insert step (W1, W2); designer box TBC |
 
 Result = **works** / **partial** / **blocked**.
 
@@ -54,6 +54,7 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** Workflow 9 anatomy (`GET /Workflow/9`): `steps[]` (local `step_id` 1..n, global `fdid`, `stage_number`, `isstart`, `islaststep`), each with `actions[]` (`start_step` → `end_step` as LOCAL step ids; `action_id` = global Outcome id, e.g. Resolve Ticket 4; `action_type` 1 = outcome, 3 = system event like End-User Update with `end_step -99`, 8 = approval result with `approval_result` 0 approved / 1 rejected). `stages[]` keyed by local `sequence`. `flow_chart_json` = designer layout (node_N = step N). Internal links are local, so a copy only needs global ids stripped (`id`, `fdid`, `guid`) plus the parent pointer `flow_id`. Open risk: new steps have no node in `flow_chart_json`.
 - **2026-10-19:** Status/outcome evidence (status-28, outcome-11). Workflow test plan `plans/workflow-test.json`: status Awaiting Equipment (SLA hold) → action Equipment Ordered (newstatus) → copy of workflow 9 with a new step between Request Fulfilment and Closed → partial update of Employee Onboarding `workflow_id`. Mock run: all payloads clean, links correct. To verify: systemid 0 = plain action; designer shows the new step.
 - **2026-10-19:** First real workflow run stopped at step 3: reusing "Resolve Ticket" failed because Outcome LIST rows only carry `buttonname` (full records also have `outcome`). It had already created status 30 and outcome 90. Fixes: lookups check all name-like properties (S8), and a pre-flight resolves every reuse/update target before any write (S7). Re-run will reuse 30 and 90.
+- **2026-10-19:** 🏁 **WORKFLOW TEST PASSED.** Workflow 20 "Employee Onboarding Workflow" built from a copy of workflow 9 with a new step, stage and two actions; Employee Onboarding switched to it via partial update. In the UI: new stage shows, Equipment Ordered appears, moves the ticket to Awaiting Equipment, Resolve closes it. Approval auto-skipped because the test user has no line manager (correct Halo behaviour). Plans need a way to name approvers (agent / team / role), so approval step types beyond 10 must be mapped next. Designer view of the new step: still to check.
 - **Method note:** a HAR capture of a Halo screen shows exactly what the UI loads. Faster than guessing; use it whenever the UI disagrees with the API.
 
 ## To verify in the Halo UI (inferred, not yet proven)
