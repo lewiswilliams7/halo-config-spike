@@ -44,11 +44,14 @@ Result = **works** / **partial** / **blocked**.
 
 - **2026-10-19:** ✅ **Full build applied.** Fields 311–314, SLA 5, approval process 8, ticket type 56 created in order. Run log review found two template leftovers on the ticket type: `approval_process_name` still named the template's process, and `published_id` (a GUID) was copied. Both now fixed (`published_id` treated as identity in `clean.ts`). Need to check whether ticket type 56 shares HR Onboarding's portal form.
 
+- **2026-10-19:** ✅ **Ticket form works.** Employee Onboarding shows all 4 fields, right types, right order; Start date and Department mandatory (confirms `endusernew`/`technew` = 3). Labels first showed `!#?UnknownString?#!` until a browser refresh: Halo's label cache, not a build bug. Product note: tell users to refresh Halo after a build.
+- **2026-10-19:** ❌ **Dropdown has no options.** Sending `values: [{name}]` without a `lookup` id does not create a value list. Values live in a separate lookup table the field points at. Investigating `/Lookup`.
+
 ## To verify in the Halo UI (inferred, not yet proven)
 
-- [ ] Mandatory = `endusernew`/`technew` **3** (optional = 1). Check: on HR Onboarding, are First Name, Last Name and Employee ID required, and Starting Date optional?
+- [x] Mandatory = `endusernew`/`technew` **3** (optional = 1). Confirmed on Employee Onboarding.
 - [ ] Approval step `type` **10** = requester's line manager. Check: open Line Manager Approval Process, see what the step's approver is set to.
-- [ ] Posting a dropdown with `values: [{name}]` and no `lookup` creates a new value list (test with the first field write).
+- [x] Posting a dropdown with `values: [{name}]` and no `lookup` does NOT create a value list. ❌
 
 ## Open questions
 
