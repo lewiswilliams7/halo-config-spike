@@ -50,6 +50,15 @@ npm run scan -- --fresh # re-pick templates
 
 Every template is deep-cleaned before use (`spike/lib/clean.ts`): copied Halo objects carry nested ids that point at other records, and posting them unchanged can modify existing config.
 
+## The AI planner
+
+```powershell
+npm run plan -- "Create an Equipment Request ticket type for the HR team with a laptop tick box"
+npm run plan -- --file prompts/enterprise-jml.txt
+```
+
+Reads the instance (what exists, workflow step names), asks the model for a plan in the builder's format, validates it (known objects, refs defined before use, names really exist) and retries once with the errors. Prints a review: steps, **what it can't build yet**, assumptions to check, questions. Saves to `spike/plans/generated/`. Nothing is written to Halo until you dry-run and `--apply` that plan. Needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `.env`.
+
 ## The demo
 
 `spike/plans/onboarding.json` is the onboarding request as a plan. `spike/lib/translators.ts` turns each step into a Halo payload, starting from your template fixtures.

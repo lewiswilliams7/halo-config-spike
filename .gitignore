@@ -13,3 +13,6 @@ spike/runs/*.json
 
 # Shared fixture bundle: real instance data
 SEND-TO-CLAUDE.txt
+
+# AI-generated plans contain instance names
+spike/plans/generated/

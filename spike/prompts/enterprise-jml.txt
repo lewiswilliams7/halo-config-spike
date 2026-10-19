@@ -1,0 +1,17 @@
+We're a 2,000-person company rolling out a proper Joiner / Mover / Leaver process in Halo.
+
+Joiners: a "New Joiner" request with the starter's full name, start date, job title, department (HR, IT, Finance, Sales, Operations), office location (London, Birmingham, Remote), contract type (Permanent, Fixed-term, Contractor), manager's name, and an equipment section: laptop type (Standard, Developer, Executive), extra monitors (tick box), mobile phone (tick box), and software needed (multi-select: Office 365, Salesforce, Adobe, Jira). Start date, department, location and contract type are mandatory. If the contract type is Contractor, they must also give an end date.
+
+Movers: a "Mover" request with employee name, current department, new department, effective date and whether system access needs to change.
+
+Leavers: a "Leaver" request with employee name, leaving date, reason (Resignation, Dismissal, Retirement, End of contract) and whether they hold company equipment.
+
+All three go to the HR team first. Joiners need approval from the HR approval group, then the requester's line manager, and if the starter needs Salesforce or admin access, IT Security must approve as well. Leavers flagged as Dismissal skip approval and go straight to IT for same-day account disablement.
+
+Joiners should follow a workflow: HR checks → IT provisioning → Facilities (desk and pass) → Closed. IT provisioning should create child tickets for each piece of kit, and when the ticket is waiting on equipment it should pause the SLA. Agents need buttons for "Equipment Ordered" and "Accounts Created".
+
+SLAs: joiners resolved within 5 working days, leavers within 1 working day, critical leavers (dismissals) within 4 hours.
+
+Create a "People Operations" team with Kaleem Smith and Jennifer Williams, and an "IT Security Approvers" group with Robert James.
+
+Email the line manager when the joiner request is approved, and email the requester when IT provisioning is complete. Categorise everything under People > Joiners / Movers / Leavers.

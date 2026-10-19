@@ -51,6 +51,14 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Portal layout and branding | ⬜ | |
 | AI / MCP configuration | ⬜ | |
 
+## The AI planner
+
+| Capability | Status | Notes |
+|---|---|---|
+| Plain English → plan in the builder's format | 🧪 | `npm run plan`; validation + one retry proven with a faulty fake reply |
+| Says what it can't build (`unsupported`) instead of guessing | 🧪 | Tested by `prompts/enterprise-jml.txt` |
+| Uses the instance inventory (reuse real names, real workflow steps) | 🧪 | |
+
 ## Reading the customer's instance
 
 | Capability | Status | Notes |

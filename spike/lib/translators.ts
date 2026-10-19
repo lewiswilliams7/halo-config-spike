@@ -125,6 +125,12 @@ export type Approver =
 export interface Plan {
   request: string;
   steps: PlanStep[];
+  /** Planner output: parts of the request the builder can't do yet, in plain words. */
+  unsupported?: string[];
+  /** Planner output: choices it made that the user should check (e.g. which template it based things on). */
+  assumptions?: string[];
+  /** Planner output: things it needs answered before the plan is safe to build. */
+  questions?: string[];
 }
 
 export interface Translator {
