@@ -382,6 +382,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const m = SPIKE_MAP.ticketType;
       p.name = step.name;
       set(p, m.summary, step.name, 'default summary', warn);
+      // Rule T4 (2026-10-19): a copied type keeps the source's "override with this template when logging
+      // manually". New Joiner (copy of New Starter Request) got template 1, which switched every new ticket
+      // back to New Starter Request. A new type must never inherit it.
+      p.overridewiththefollowingtemplatewhenloggingmanually = -1;
       if (step.team) set(p, m.teamName, refs[step.team]?.name, 'default team', warn);
       if (step.sla) set(p, m.sla, refs[step.sla]?.id, 'default SLA', warn);
       if (step.approval) {
