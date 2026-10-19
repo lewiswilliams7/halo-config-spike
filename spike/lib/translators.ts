@@ -93,6 +93,8 @@ export interface Plan {
 export interface Translator {
   resource: string;
   template: string; // file in fixtures/
+  /** The name Halo will actually store, if it differs from what we send. Used to find and verify. */
+  storedName?: (step: PlanStep) => string;
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -107,6 +109,11 @@ function fromTemplate(file: string, resource: string): Record<string, unknown> {
     );
   }
   return cleanForCreate(loadJson<Record<string, unknown>>(`fixtures/${file}`));
+}
+
+/** "CFOnboardStartDate" → "OnboardStartDate". Halo adds the CF back. */
+export function bareFieldName(name = ''): string {
+  return name.replace(/^CF/i, '');
 }
 
 function set(payload: Record<string, unknown>, prop: string | null, value: unknown, what: string, warn: (m: string) => void) {
@@ -131,10 +138,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Ticket custom fields are FieldInfo. /Field is asset fields (NOTES.md, 2026-10-19).
     resource: 'FieldInfo',
     template: 'template-field.json',
+    // Halo prefixes custom field names with "CF" itself: sending "CFx" stores "CFCFx" (2026-10-19, field 310).
+    storedName: (step) => `CF${bareFieldName(step.name)}`,
     build: (step, _refs, warn) => {
       const p = fromTemplate('template-field.json', 'FieldInfo');
       const m = SPIKE_MAP.field;
-      p.name = step.name;
+      p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
       p.defaultvalue = '';

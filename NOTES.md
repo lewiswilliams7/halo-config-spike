@@ -15,7 +15,7 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 | Status | `/Status` | | | | | |
 | Priority | `/Priority` | | | | | |
 | SLA | `/SLA` | | | | | |
-| Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | | | | | |
+| Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | ✅ | ✅ | | | Halo adds `CF` prefix to `name` |
 | Field group | `/FieldGroup` | | | | | |
 | Category | `/Category` | | | | | |
 | Approval process | `/ApprovalProcess` | | | | | |
@@ -38,6 +38,9 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** Ticket type links: `default_team` = team **name** (not id), `default_sla` = SLA id, `approval_process_id` = id, `workflow_id`, `default_priority`. Fields attach via `fields: [{fieldid, seq, endusernew, technew, ...}]`; field groups via `groupid`.
 - **2026-10-19:** SLA targets are per priority: `priorities[].fixtime` + `fixunits` ('H'/'D'), with `workday_id`.
 - **2026-10-19:** ⚠️ Copying a fixture as-is is DANGEROUS. Nested ids point at existing records: `fieldinfo.tickettypes` would attach a new field to existing ticket types, `lookup` would share an existing dropdown list, `sla.priorities[].slaid` and `tickettype.fields[].id` could modify the source records. Fixed with `lib/clean.ts` (deep-strips identity keys, parent pointers and link arrays), now used by both `post` and the builder.
+
+- **2026-10-19:** ✅ **First API write.** `POST /FieldInfo` created field 310. Read back: attached to **0** ticket types, so the deep clean works.
+- **2026-10-19:** Halo **prefixes custom field names with "CF" itself**. Sent `CFSpikeTest`, stored `CFCFSpikeTest`. Field translator now sends the bare name; builder expects `CF` + bare name when finding and verifying.
 
 ## To verify in the Halo UI (inferred, not yet proven)
 

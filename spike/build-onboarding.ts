@@ -72,7 +72,8 @@ for (const [i, step] of plan.steps.entries()) {
       continue;
     }
 
-    const existing = await findByName(t.resource, step.name ?? '');
+    const expectedName = t.storedName?.(step) ?? step.name ?? '';
+    const existing = await findByName(t.resource, expectedName);
     if (existing) {
       refs[step.id] = { id: existing.id as number, name: String(existing.name ?? '') };
       log.push({ step: step.id, object: step.object, outcome: 'already exists', id: existing.id, warnings });
@@ -89,12 +90,12 @@ for (const [i, step] of plan.steps.entries()) {
     } else {
       const created = firstRecord(await haloPost(`/${t.resource}`, [payload]));
       if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
-      refs[step.id] = { id: created.id as number, name: step.name };
+      refs[step.id] = { id: created.id as number, name: expectedName };
 
       // Read back and check the name stuck: the cheapest proof it really saved.
       const back = firstRecord(await haloGet(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
-      const ok = String(back?.name ?? '') === String(step.name);
-      if (!ok) warn(`Read-back mismatch: expected name "${step.name}", got "${back?.name}"`);
+      const ok = String(back?.name ?? '') === expectedName;
+      if (!ok) warn(`Read-back mismatch: expected name "${expectedName}", got "${back?.name}"`);
 
       log.push({ step: step.id, object: step.object, outcome: 'created', id: created.id, warnings, payload });
       console.log(`+ ${label}  created id ${created.id}${ok ? ', verified' : ''}`);
