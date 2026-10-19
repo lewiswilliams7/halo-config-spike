@@ -45,6 +45,7 @@ Templates the builder needs in `spike/fixtures/` (copy them from captured fixtur
 
 ```powershell
 Copy-Item spike\fixtures\fieldinfo-141.json spike\fixtures\template-field.json
+Copy-Item spike\fixtures\fieldinfo-124.json spike\fixtures\template-field-dropdown.json
 Copy-Item spike\fixtures\sla-3.json spike\fixtures\template-sla.json
 Copy-Item spike\fixtures\approvalprocess-4.json spike\fixtures\template-approvalprocess.json
 Copy-Item spike\fixtures\tickettype-36.json spike\fixtures\template-tickettype.json

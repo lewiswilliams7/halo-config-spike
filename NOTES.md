@@ -45,7 +45,7 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** ✅ **Full build applied.** Fields 311–314, SLA 5, approval process 8, ticket type 56 created in order. Run log review found two template leftovers on the ticket type: `approval_process_name` still named the template's process, and `published_id` (a GUID) was copied. Both now fixed (`published_id` treated as identity in `clean.ts`). Need to check whether ticket type 56 shares HR Onboarding's portal form.
 
 - **2026-10-19:** ✅ **Ticket form works.** Employee Onboarding shows all 4 fields, right types, right order; Start date and Department mandatory (confirms `endusernew`/`technew` = 3). Labels first showed `!#?UnknownString?#!` until a browser refresh: Halo's label cache, not a build bug. Product note: tell users to refresh Halo after a build.
-- **2026-10-19:** ❌ **Dropdown has no options.** Sending `values: [{name}]` without a `lookup` id does not create a value list. Values live in a separate lookup table the field points at. Investigating `/Lookup`.
+- **2026-10-19:** ❌ **Dropdown has no options.** Sending `values: [{name}]` without a `lookup` id does not create a value list. Values live in a separate lookup table the field points at. Correction: Halo DID create the list (field 313 → lookup 175 with HR/IT/Finance, all active). Difference from a working dropdown (124): `inputtype` -1 vs 0 and `load_type` missing vs 0, both inherited from the text template. Fix: per-type templates (`template-field-dropdown.json` from fieldinfo-124). Testing with `plans/dropdown-test.json`.
 
 ## To verify in the Halo UI (inferred, not yet proven)
 

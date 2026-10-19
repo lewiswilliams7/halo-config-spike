@@ -141,8 +141,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Halo prefixes custom field names with "CF" itself: sending "CFx" stores "CFCFx" (2026-10-19, field 310).
     storedName: (step) => `CF${bareFieldName(step.name)}`,
     build: (step, _refs, warn) => {
-      const p = fromTemplate('template-field.json', 'FieldInfo');
+      // Prefer a template of the same field type: each type carries its own defaults.
+      // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
+      const typed = `template-field-${step.type}.json`;
+      const p = fromTemplate(fileExists(`fixtures/${typed}`) ? typed : 'template-field.json', 'FieldInfo');
       const m = SPIKE_MAP.field;
+      if (!fileExists(`fixtures/${typed}`) && step.type && step.type !== 'text') {
+        warn(`No fixtures/${typed}; using the text template, so ${step.type}-specific defaults may be wrong`);
+      }
       p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
       p.hint = '';
