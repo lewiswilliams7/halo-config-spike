@@ -11,16 +11,16 @@ Method for each row: build one by hand in the UI → `npm run get -- <Resource> 
 
 | Object | Endpoint | GET works | POST creates | Correct in UI | Result | Payload notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| Team | `/Team` | | | | | |
+| Team | `/Team` | ✅ | (reused) | ✅ | works | |
 | Status | `/Status` | | | | | |
 | Priority | `/Priority` | | | | | |
-| SLA | `/SLA` | | | | | |
-| Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | ✅ | ✅ | | | Halo adds `CF` prefix to `name` |
+| SLA | `/SLA` | ✅ | ✅ | ✅ | works | targets per priority |
+| Custom field | `/FieldInfo` (not `/Field`: that is asset fields) | ✅ | ✅ | ✅ | works | `CF` prefix added by Halo; needs one save after create (F6) |
 | Field group | `/FieldGroup` | | | | | |
 | Category | `/Category` | | | | | |
-| Approval process | `/ApprovalProcess` | | | | | |
+| Approval process | `/ApprovalProcess` | ✅ | ✅ | ✅ | works | step type 10 = line manager |
 | Approval rule | `/ApprovalProcessRule` | | | | | |
-| Ticket type | `/TicketType` | | | | | |
+| Ticket type | `/TicketType` | ✅ | ✅ | ✅ | works | team by name; fields[] with mandatory 3 |
 | Workflow (v2, look only) | `/Workflow` | | | | | |
 
 Result = **works** / **partial** / **blocked**.
@@ -49,6 +49,8 @@ Result = **works** / **partial** / **blocked**.
 - **2026-10-19:** 🔎 **Browser capture (HAR) of the new-ticket form.** The form loads `GET /TicketType/{id}?includedetails=true&isnewticket=true&system_lookups=true`, and **our dropdown's values (HR/IT/Finance) ARE in that response**. So storage and access are fine: the browser hides them because of a field setting. Versus the only working dropdown on the form (308 CFAIAutoResolution), ours differs on: `visibility` (missing vs 1), `inputtype` (-1 vs 0), `load_type` (missing vs 0), and has empty `sqllookup`/`third_party_name`/`table_id`/`calcfield` keys that 308 doesn't have at all. Test 3 builds a dropdown from 308 as the template (`plans/dropdown-test-3.json`).
 - **2026-10-19:** 🎯 **Root cause candidate: Halo drops `visibility` on create.** Field 316 (copied from working dropdown 308) differs from 308 only in expected ways, plus `visibility: 1` missing, though we sent it. Every working field has it; every API-built field lacks it. Tried setting it with an update: **❌ not saved**. Halo ignores `visibility` on create AND on partial update, so it's derived or saved another way. Good news from the same test: a partial update (`[{id, one property}]`) changed nothing else, so targeted edits are safe. Next: HAR of the UI saving field 316 to see how the screen sets it.
 - **2026-10-19:** ✅ **SOLVED: dropdown options.** Saving field 316 in the UI (hint "X") made its options show, yet the before/after diff showed ONLY `hint` changed (`visibility` still missing). Then `npm run update -- FieldInfo 315 summary=x` via the API fixed field 315 too. Rule F6: a field needs one real save after creation. Earlier "update visibility" attempts didn't count because Halo ignored the property, so nothing actually changed. Builder now creates with a placeholder summary and clears it straight away.
+- **2026-10-19:** 🏁 **Gate 1 technical half PASSED.** After `npm run update -- FieldInfo 313 inputtype=0 load_type=0` (a real save, rule F6), Employee Onboarding works end to end: 4 fields with correct types and labels, Start date + Department mandatory, Department shows HR/IT/Finance, team, SLA and approval set. Everything built through the API from one plan.
+- **Next test: workflows.** A workflow is a graph (steps → steps, statuses, actions), so the deep clean can't be used as-is: internal ids must be REMAPPED, not stripped. Plan: create an action (Outcome) and a status, copy an existing workflow with links intact, add a stage using the new action/status, attach it to Employee Onboarding.
 - **Method note:** a HAR capture of a Halo screen shows exactly what the UI loads. Faster than guessing; use it whenever the UI disagrees with the API.
 
 ## To verify in the Halo UI (inferred, not yet proven)
