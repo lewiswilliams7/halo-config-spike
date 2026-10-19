@@ -1,0 +1,15 @@
+{
+  "request": "Test 3: dropdown built from field 308 (a dropdown proven to render on the new-ticket form).",
+  "steps": [
+    { "id": "team_hr", "object": "team", "action": "reuse", "match": { "name": "Human Resources" } },
+    { "id": "f_dept3", "object": "field", "action": "create", "name": "CFSpikeDepartment3", "label": "Department (test 3)", "type": "dropdown", "options": ["HR", "IT", "Finance"] },
+    {
+      "id": "tt_test3",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "Spike Dropdown Test 3",
+      "fields": [{ "ref": "f_dept3", "mandatory": true }],
+      "team": "team_hr"
+    }
+  ]
+}
