@@ -108,6 +108,8 @@ export interface PlanStep {
   groups?: string[];
   /** workflow: name of an existing workflow on THIS instance to copy. */
   copy_of?: string;
+  /** any create: name of an existing record on THIS instance to copy the shape from (rule D3). */
+  based_on?: string;
   /** approval_process: approval stages in order. Each stage is ONE of these (rule P1). */
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
@@ -155,9 +157,22 @@ export function fieldTemplateFile(type = 'text'): string {
   return `template-field-${type}.json`;
 }
 
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 /** Template file for "copy this named workflow". */
 export function workflowTemplateFile(copyOf?: string): string {
-  return copyOf ? `template-workflow--${copyOf.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.json` : 'template-workflow.json';
+  return copyOf ? `template-workflow--${slug(copyOf)}.json` : 'template-workflow.json';
+}
+
+/** The record a step should copy its shape from, if the plan names one (based_on, or copy_of for workflows). */
+export function namedTemplate(step: PlanStep): string | undefined {
+  return step.based_on ?? (step.object === 'workflow' ? step.copy_of : undefined);
+}
+
+/** Which template file a step uses: a named one if the plan says "based_on", else the default for its kind. */
+export function templateFileFor(step: PlanStep, fallback: string): string {
+  const named = namedTemplate(step);
+  return named ? `template-${step.object}--${slug(named)}.json` : fallback;
 }
 
 export const FIELD_SUMMARY_PLACEHOLDER = 'created by builder';
@@ -180,7 +195,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     template: 'template-team.json',
     build: (step, refs) => {
       // Evidence: team-6. Members are agents[] rows { agent_id }; the template's members are dropped.
-      const p = fromTemplate('template-team.json', 'Team');
+      const p = fromTemplate(templateFileFor(step, 'template-team.json'), 'Team');
       p.name = step.name;
       p.agents = (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id }));
       p.managers = [];
@@ -200,7 +215,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     build: (step, _refs, warn) => {
       // Prefer a template of the same field type: each type carries its own defaults.
       // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
-      const p = fromTemplate(fieldTemplateFile(step.type), 'FieldInfo');
+      const p = fromTemplate(templateFileFor(step, fieldTemplateFile(step.type)), 'FieldInfo');
       const m = SPIKE_MAP.field;
       p.name = bareFieldName(step.name);
       set(p, m.label, step.label, 'field label', warn);
@@ -226,7 +241,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'SLA',
     template: 'template-sla.json',
     build: (step, _refs, warn) => {
-      const p = fromTemplate('template-sla.json', 'SLA');
+      const p = fromTemplate(templateFileFor(step, 'template-sla.json'), 'SLA');
       const m = SPIKE_MAP.sla;
       p.name = step.name;
       if (step.resolve_days !== undefined) {
@@ -249,7 +264,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'ApprovalProcess',
     template: 'template-approvalprocess.json',
     build: (step, refs, warn) => {
-      const p = fromTemplate('template-approvalprocess.json', 'ApprovalProcess');
+      const p = fromTemplate(templateFileFor(step, 'template-approvalprocess.json'), 'ApprovalProcess');
       const m = SPIKE_MAP.approval;
       p.name = step.name;
       const approvers: Approver[] =
@@ -296,7 +311,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     template: 'template-cab.json',
     build: (step, refs) => {
       // Evidence: cab-4. members[] { agent_id, type 0 }; approvals_needed; template roles dropped.
-      const p = fromTemplate('template-cab.json', 'CAB');
+      const p = fromTemplate(templateFileFor(step, 'template-cab.json'), 'CAB');
       p.name = step.name;
       p.members = (step.members ?? []).map((m) => ({ agent_id: refs[m]?.id, type: 0 }));
       p.roles = [];
@@ -317,7 +332,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return out;
     },
     build: (step, refs, warn) => {
-      const p = fromTemplate('template-tickettype.json', 'TicketType');
+      const p = fromTemplate(templateFileFor(step, 'template-tickettype.json'), 'TicketType');
       const m = SPIKE_MAP.ticketType;
       p.name = step.name;
       set(p, m.summary, step.name, 'default summary', warn);
@@ -366,7 +381,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'FieldGroup',
     template: 'template-fieldgroup.json',
     build: (step, refs) => {
-      const p = fromTemplate('template-fieldgroup.json', 'FieldGroup');
+      const p = fromTemplate(templateFileFor(step, 'template-fieldgroup.json'), 'FieldGroup');
       const m = SPIKE_MAP.ticketType;
       p.name = step.name;
       p.header = step.label ?? step.name;
@@ -387,7 +402,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'Status',
     template: 'template-status.json',
     build: (step) => {
-      const p = fromTemplate('template-status.json', 'Status');
+      const p = fromTemplate(templateFileFor(step, 'template-status.json'), 'Status');
       p.name = step.name;
       p.shortname = step.name;
       if (step.sla_action !== undefined) p.slaaction = step.sla_action;
@@ -402,7 +417,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     template: 'template-outcome.json',
     nameKey: 'outcome',
     build: (step, refs) => {
-      const p = fromTemplate('template-outcome.json', 'Outcome');
+      const p = fromTemplate(templateFileFor(step, 'template-outcome.json'), 'Outcome');
       p.outcome = step.name;
       p.buttonname = step.name;
       // Template is a system action: don't inherit its behaviour or its keyboard shortcut.
@@ -421,7 +436,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'Workflow',
     template: 'template-workflow.json',
     build: (step, refs, warn) => {
-      const p = fromTemplate(workflowTemplateFile(step.copy_of), 'Workflow');
+      const p = fromTemplate(templateFileFor(step, workflowTemplateFile()), 'Workflow');
       p.name = step.name;
       const ins = step.insert_step;
       if (!ins) return p;

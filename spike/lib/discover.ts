@@ -14,7 +14,7 @@
  *   - workflows: the exact one the plan says to copy (copy_of), by name
  */
 import { extractList, fileExists, firstRecord, haloGet, saveJson, templateRel } from './halo.js';
-import { type PlanStep, SPIKE_MAP, fieldTemplateFile, workflowTemplateFile } from './translators.js';
+import { type PlanStep, SPIKE_MAP, fieldTemplateFile, namedTemplate, templateFileFor, workflowTemplateFile } from './translators.js';
 
 type Row = Record<string, unknown>;
 
@@ -45,7 +45,7 @@ export function needsFor(steps: PlanStep[]): Need[] {
   const needs = new Map<string, Need>();
   const add = (n: Need) => needs.set(n.file, n);
 
-  for (const s of steps.filter((x) => x.action === 'create')) {
+  for (const s of steps.filter((x) => x.action === 'create' && !namedTemplate(x))) {
     switch (s.object) {
       case 'field': {
         const type = s.type ?? 'text';
@@ -56,7 +56,11 @@ export function needsFor(steps: PlanStep[]): Need[] {
           resource: 'FieldInfo',
           why: `${type} field`,
           listFilter: (r) => Number(r.id) > 0 && String(r.name ?? '').startsWith('CF') && (r.type === undefined || r.type === code),
-          accept: (d) => d.type === code && Number(d.custom) === 1 && (!lookup || (Array.isArray(d.values) && d.values.length > 0)),
+          // Lookups must be a field's OWN static list (extratype 1). A field fed by a built-in list
+          // (e.g. regions) ignores the values we send and shows its own (rule D2, 2026-10-19).
+          accept: (d) =>
+            d.type === code && Number(d.custom) === 1 &&
+            (!lookup || (Number(d.extratype) === 1 && Array.isArray(d.values) && d.values.length > 0)),
           maxDetails: 60,
         });
         break;
@@ -65,8 +69,12 @@ export function needsFor(steps: PlanStep[]): Need[] {
         add({
           file: 'template-tickettype.json', resource: 'TicketType', why: 'ticket type',
           accept: (d) => Array.isArray(d.fields) && (d.use === undefined || d.use === 'tickets'),
-          prefer: (d) => Number(d.itilrequesttype) === 3,
-          maxDetails: 25,
+          // A plain service request type: not a booking, project, task, article or chat type.
+          prefer: (d) =>
+            Number(d.itilrequesttype) === 3 &&
+            !/booking|project|task|article|feedback|teams|placeholder|major|problem|change/i.test(String(d.name)) &&
+            !Number(d.agentresourcebookingtype ?? 0),
+          maxDetails: 40,
         });
         break;
       case 'sla':
@@ -83,22 +91,24 @@ export function needsFor(steps: PlanStep[]): Need[] {
       case 'status':
         add({
           file: 'template-status.json', resource: 'Status', why: 'status',
-          listFilter: (r) => !['new', 'closed'].includes(String(r.name ?? '').toLowerCase()),
+          // Not a status Halo treats specially.
+          listFilter: (r) =>
+            !['new', 'closed', 'draft', 're-opened', 'updated', 'in progress', 'invoiced', 'rejected', 'approved',
+              'awaiting approval', 'cancelled', 'resolved'].includes(String(r.name ?? '').toLowerCase()),
           accept: (d) => Number(d.type ?? 0) === 0,
         });
         break;
       case 'outcome':
         add({
           file: 'template-outcome.json', resource: 'Outcome', why: 'action',
-          accept: () => true, prefer: (d) => Number(d.systemid ?? 0) === 0, maxDetails: 15,
+          // A plain action: not a system one, doesn't change status, and not one that closes/approves/etc.
+          accept: (d) => !/resolve|close|re-?open|approv|cancel|delete|merge|escalat/i.test(nameOf(d)),
+          prefer: (d) => Number(d.systemid ?? 0) === 0 && Number(d.newstatus ?? 0) === 0,
+          maxDetails: 25,
         });
         break;
       case 'workflow':
-        add(
-          s.copy_of
-            ? { file: workflowTemplateFile(s.copy_of), resource: 'Workflow', why: `copy of "${s.copy_of}"`, byName: s.copy_of, force: true }
-            : { file: workflowTemplateFile(), resource: 'Workflow', why: 'workflow', accept: (d) => Array.isArray(d.steps) && d.steps.length > 1 },
-        );
+        if (!s.copy_of) add({ file: workflowTemplateFile(), resource: 'Workflow', why: 'workflow', accept: (d) => Array.isArray(d.steps) && d.steps.length > 1 });
         break;
       case 'team':
         add({ file: 'template-team.json', resource: 'Team', why: 'team', accept: () => true });
@@ -111,8 +121,20 @@ export function needsFor(steps: PlanStep[]): Need[] {
         break;
     }
   }
+  // Plans can name the record to copy (based_on / copy_of): that always wins (rule D3).
+  for (const s of steps.filter((x) => x.action === 'create' && namedTemplate(x))) {
+    const named = namedTemplate(s)!;
+    const file = templateFileFor(s, '');
+    needs.set(file, { file, resource: RESOURCE_OF[s.object], why: `${s.object} based on "${named}"`, byName: named, force: true });
+  }
   return [...needs.values()];
 }
+
+const RESOURCE_OF: Record<PlanStep['object'], string> = {
+  field: 'FieldInfo', ticket_type: 'TicketType', sla: 'SLA', approval_process: 'ApprovalProcess', status: 'Status',
+  outcome: 'Outcome', workflow: 'Workflow', team: 'Team', approval_group: 'CAB', field_group: 'FieldGroup',
+  agent: 'Agent',
+};
 
 /** Make sure every template the plan needs exists for this instance. Returns lines describing what was picked. */
 export async function ensureTemplates(steps: PlanStep[], opts: { fresh?: boolean } = {}): Promise<string[]> {

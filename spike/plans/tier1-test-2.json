@@ -1,0 +1,61 @@
+{
+  "request": "Retest: Equipment Request v2 with a multi-select built from a static-list field, based on HR Onboarding.",
+  "steps": [
+    {
+      "id": "team_onb",
+      "object": "team",
+      "action": "reuse",
+      "match": {
+        "name": "Onboarding Team"
+      }
+    },
+    {
+      "id": "f_laptop",
+      "object": "field",
+      "action": "reuse",
+      "match": {
+        "name": "CFEquipLaptopNeeded"
+      }
+    },
+    {
+      "id": "f_items2",
+      "object": "field",
+      "action": "create",
+      "name": "CFEquipItemList",
+      "label": "Items",
+      "type": "multiselect",
+      "options": [
+        "Monitor",
+        "Keyboard",
+        "Headset"
+      ]
+    },
+    {
+      "id": "fg_equip2",
+      "object": "field_group",
+      "action": "create",
+      "name": "Equipment Details v2",
+      "label": "Equipment Details",
+      "fields": [
+        {
+          "ref": "f_laptop"
+        },
+        {
+          "ref": "f_items2",
+          "mandatory": true
+        }
+      ]
+    },
+    {
+      "id": "tt_equip2",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "Equipment Request v2",
+      "based_on": "HR Onboarding",
+      "groups": [
+        "fg_equip2"
+      ],
+      "team": "team_onb"
+    }
+  ]
+}
