@@ -48,6 +48,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
   const get = async (resource: string, id: unknown) => firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' })) ?? {};
 
   let teamsList: Row[] = [];
+  let outcomesList: Row[] = [];
   const ticketTypes = await list('TicketType');
   const fields = await list('FieldInfo', (r) => Number(r.id) > 0 && nameOf(r).startsWith('CF'));
   const fieldGroups = await list('FieldGroup');
@@ -82,7 +83,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
     field_groups: fieldGroups.map(nameOf),
     workflows_and_their_steps,
     statuses: statuses.map(nameOf),
-    actions: (await list('Outcome')).map(nameOf),
+    actions: (outcomesList = await list('Outcome')).map(nameOf),
     slas: slas.map(nameOf),
     priorities: (await list('Priority')).map(nameOf),
     approval_processes: approvalProcesses.map(nameOf),
@@ -153,6 +154,12 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
   for (const d of await pool(teamsList, (t) => get('Team', t.id)))
     teams[nameOf(d)] = `${d.department_name ?? ''}: ${((d.agents as Row[]) ?? []).map((a) => String(a.namewithinactive ?? a.agent_name ?? agentName.get(Number(a.agent_id)) ?? `agent ${a.agent_id}`)).join(', ') || 'no members'}`;
 
+  // Evidence: outcome-11 newstatus (status id, 0 = no change).
+  const statusName = new Map(statuses.map((st) => [Number(st.id), nameOf(st)]));
+  const actions_that_set_status: Record<string, string> = {};
+  for (const d of await pool(outcomesList, (o) => get('Outcome', o.id)))
+    if (Number(d.newstatus) > 0) actions_that_set_status[nameOf(d)] = statusName.get(Number(d.newstatus)) ?? `status ${d.newstatus}`;
+
   const sla_targets: Record<string, string> = {};
   for (const d of await pool(slas, (s) => get('SLA', s.id)))
     sla_targets[nameOf(d)] = ((d.priorities as Row[]) ?? []).map((p) => `${p.name} ${p.fixtime}${String(p.fixunits ?? '').toLowerCase()}`).join(', ');
@@ -167,6 +174,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
       statuses_that_pause_sla,
       teams_department_and_members: teams,
       workflow_actions_by_stage: workflow_actions,
+      actions_that_set_status,
       approval_groups,
       approval_processes,
       sla_targets,
