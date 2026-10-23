@@ -67,7 +67,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | D3 | **"Any valid example" is not a good template.** Defaults avoid special cases: lookups only from static-list fields (`extratype` 1); service-request ticket types that aren't bookings/projects/tasks; statuses Halo treats specially (New, Closed, Draft…); actions that close/approve/escalate. Better still, plans name the template (`based_on` / `copy_of`) so the customer sees and approves the choice. | Multi-select showed "Americas/EMEA" from a region-fed template; Desk Booking chosen as a ticket type template | `lib/discover.ts`, `translators.ts templateFileFor` |
 | M1 | Teams: members are `agents: [{ agent_id }]`. Approval groups (CAB): `members: [{ agent_id, type 0 }]`, `approvals_needed`; drop template `roles`. Field groups: `name`, `header`, `fields[]` rows; attach to a ticket type as a row with `groupid` and `fieldid 0`. Strip `team_id`/`cab_id` from copied rows. | Template's members copied into the new team/group | `translators.ts` |
 
-## Changing what already exists (added 2026-10-23, proven on the mock only: confirm on real Halo)
+## Changing what already exists (added 2026-10-23; U2, U3, W3, F7 proven on gethandoveruk the same day)
 
 | # | Rule | Symptom it prevents | Where |
 |---|---|---|---|
@@ -75,6 +75,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | U3 | Compute an update from the record as it is NOW (detail read just before), and drop changes that are already true. | Stale overwrites; "updated" reported when nothing changed | `build-onboarding.ts` update path |
 | W3 | Stages can be added to an EXISTING workflow in place: send its own steps and stages back with the new ones added; existing steps keep their local `step_id`, so tickets already on them stay put. | Customers forced into a copied workflow they didn't ask for | `translators.ts` applyInserts + workflow update |
 | F7 | New dropdown options go on the end of the field's `values` as `{ name }`; existing values are sent back with their ids. | Options lost or duplicated | `translators.ts` field update |
+| F8 | Before adding a field to a form, compare its label with every label already on the form, including inside sections ("Start date" vs "Starting Date"). Warn on a match. | Two start-date fields on HR Onboarding (23 Oct, real instance) | `translators.ts` sameMeaning / formLabels |
 | M2 | The planner must see SETTINGS, not just names: each ticket type's team, SLA, approval, workflow and form (mandatory marked), field labels/types/options, field group contents, statuses that pause the SLA, approval group members, approval stages, SLA targets. | Planner marks built things as partial, asks questions it could answer, creates near-duplicates | `lib/inventory.ts` details |
 | M3 | Never create a near-copy of an existing object (same name plus a suffix, "v2", "(copy)"): update the original. The planner's checks reject it. | Duplicate workflows, groups and ticket types on live instances | `plan.ts` validate |
 

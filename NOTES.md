@@ -111,3 +111,6 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - gpt-5 + gap analysis: 17 steps, no duplicate ticket types; still marked built things as partial, near-duplicate approval groups and field, 8 questions. Cause: inventory had names only.
 - Fixes: detailed inventory (M2), updates to existing objects (U2, U3, W3, F7, team/approval-group members, status hold), near-copy rejection (M3), max 4 questions.
 - Fixed bug: rule O3 icon had been applied to statuses, not actions.
+- Real-instance update test (update-test.json) passed on gethandoveruk: field label + new option, field added to a section, field added to HR Onboarding as mandatory, member added to an approval group, new stage added to the LIVE Service Request Workflow (with approval). All verified and checked in the UI.
+- Found: HR Onboarding now has "Start Date" next to the existing "Starting Date" (my test plan's mistake). Rule F8 warns on same-meaning labels when adding fields.
+- Planner re-run with settings: 7 steps, 17 of 18 coverage calls right. Wrong: thought People Operations lacked members (team members weren't in the read). Added team members and actions per workflow stage to the read.

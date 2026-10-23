@@ -47,6 +47,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
   };
   const get = async (resource: string, id: unknown) => firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' })) ?? {};
 
+  let teamsList: Row[] = [];
   const ticketTypes = await list('TicketType');
   const fields = await list('FieldInfo', (r) => Number(r.id) > 0 && nameOf(r).startsWith('CF'));
   const fieldGroups = await list('FieldGroup');
@@ -58,8 +59,22 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
 
   say('workflows');
   const workflows_and_their_steps: Record<string, string[]> = {};
-  for (const [w, d] of (await pool(workflows, (w) => get('Workflow', w.id))).map((d, i) => [workflows[i], d] as const))
-    workflows_and_their_steps[nameOf(w)] = ((d.steps as Row[]) ?? []).map((s) => String(s.name));
+  // Actions available on each stage, "Action → next stage" (evidence: workflow-9 steps[].actions[] action_name, end_step).
+  const workflow_actions: Record<string, Record<string, string[]>> = {};
+  for (const [w, d] of (await pool(workflows, (w) => get('Workflow', w.id))).map((d, i) => [workflows[i], d] as const)) {
+    const steps = (d.steps as Row[]) ?? [];
+    workflows_and_their_steps[nameOf(w)] = steps.map((s) => String(s.name));
+    const stepName = new Map(steps.map((s) => [Number(s.step_id), String(s.name)]));
+    workflow_actions[nameOf(w)] = Object.fromEntries(
+      steps.map((s) => [
+        String(s.name),
+        ((s.actions as Row[]) ?? []).filter((a) => a.action_name).map((a) => {
+          const to = stepName.get(Number(a.end_step));
+          return to && to !== s.name ? `${a.action_name} → ${to}` : String(a.action_name);
+        }),
+      ]),
+    );
+  }
 
   const inventory = {
     ticket_types: ticketTypes.map(nameOf),
@@ -72,7 +87,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
     priorities: (await list('Priority')).map(nameOf),
     approval_processes: approvalProcesses.map(nameOf),
     approval_groups: cabs.map(nameOf),
-    teams: (await list('Team')).map(nameOf),
+    teams: (teamsList = await list('Team')).map(nameOf),
     agents: (await list('Agent', (r) => Number(r.id) > 1)).map(nameOf),
     categories: (await list('Category')).map(nameOf),
   };
@@ -132,6 +147,12 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
         return who ? `${kind}: ${who}` : kind;
       });
 
+  // Evidence: team-12 agents[] { agent_id, namewithinactive }; fall back to the Agent list by id.
+  const agentName = new Map((await list('Agent')).map((a) => [Number(a.id), nameOf(a)]));
+  const teams: Record<string, string> = {};
+  for (const d of await pool(teamsList, (t) => get('Team', t.id)))
+    teams[nameOf(d)] = `${d.department_name ?? ''}: ${((d.agents as Row[]) ?? []).map((a) => String(a.namewithinactive ?? a.agent_name ?? agentName.get(Number(a.agent_id)) ?? `agent ${a.agent_id}`)).join(', ') || 'no members'}`;
+
   const sla_targets: Record<string, string> = {};
   for (const d of await pool(slas, (s) => get('SLA', s.id)))
     sla_targets[nameOf(d)] = ((d.priorities as Row[]) ?? []).map((p) => `${p.name} ${p.fixtime}${String(p.fixunits ?? '').toLowerCase()}`).join(', ');
@@ -144,6 +165,8 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
       custom_fields,
       field_groups,
       statuses_that_pause_sla,
+      teams_department_and_members: teams,
+      workflow_actions_by_stage: workflow_actions,
       approval_groups,
       approval_processes,
       sla_targets,

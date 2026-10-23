@@ -85,7 +85,24 @@ function keepRows(rows: unknown): Row[] {
 }
 
 /** Add fields / change mandatory on a list of field rows (ticket type or field group). */
-function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void): Row[] {
+/** Rough "same field" test on labels: lower-case words with simple endings removed ("Starting Date" ~ "Start date"). */
+function sameMeaning(a: string, b: string): boolean {
+  const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join(' ');
+  return stem(a) === stem(b);
+}
+
+/** Every label shown on a form: loose fields and fields inside its sections (from the detail read). */
+function formLabels(current: Row): string[] {
+  const out: string[] = [];
+  for (const r of (current.fields as Row[]) ?? []) {
+    const fi = r.fieldinfo as Row | undefined;
+    if (fi?.label) out.push(String(fi.label));
+    for (const f of ((r.group as Row)?.fields as Row[]) ?? []) if ((f.fieldinfo as Row)?.label) out.push(String((f.fieldinfo as Row).label));
+  }
+  return out;
+}
+
+function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void, labelsOnForm: string[] = []): Row[] {
   const m = SPIKE_MAP.ticketType;
   const level = (b?: boolean) => (b ? m.mandatoryValue : m.optionalValue);
   for (const c of mand) {
@@ -97,6 +114,10 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
   for (const f of add) {
     const id = Number(refs[f.ref]?.id);
     if (rows.some((r) => Number(r.fieldid) === id)) { warn(`add_fields: ${f.ref} is already on this form`); continue; }
+    // Rule F8 (2026-10-23): "Start date" added to a form that already had "Starting Date" in a section.
+    const label = String(refs[f.ref]?.row?.label ?? '');
+    const twin = label ? labelsOnForm.find((l) => sameMeaning(l, label)) : undefined;
+    if (twin) warn(`add_fields: the form already has a field labelled "${twin}"; "${label}" may be a duplicate`);
     const row: Row = { ...shape, fieldid: id, seq: ++seq };
     for (const k of m.mandatoryKeys ?? []) row[k] = level(f.mandatory);
     rows.push(row);
@@ -567,7 +588,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
-        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn);
+        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current));
         let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
         for (const g of st.add_groups ?? []) {
           const gid = Number(refs[g]?.id);
@@ -660,7 +681,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const st = step.set ?? {};
       if (!st.add_fields?.length && !st.field_mandatory?.length) { warn('update: nothing to set'); return {}; }
       const rows = keepRows(current.fields);
-      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn);
+      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current));
       return { fields: rows };
     },
     verifyUpdate: (back, changes) => checkFieldRows(back.fields, changes.fields, 'field group'),
