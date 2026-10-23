@@ -228,6 +228,24 @@ for (const [i, step] of plan.steps.entries()) {
   }
 }
 
+// Rule F6b (2026-10-23): F6 was proven on a field that was ALREADY on a form (trial 1, field 315). The save
+// straight after creation wasn't enough on gethandoveruk (G3 dropdowns empty). So once everything is placed,
+// give every new dropdown / multi-select field one more real save (set a summary, then clear it).
+if (apply) {
+  const newLists = log.filter((l) => l.outcome === 'created' && l.object === 'field' && [2, 3].includes(Number((l.payload as Record<string, unknown>)?.type)));
+  if (newLists.length) {
+    console.log(`\nFinishing ${newLists.length} dropdown field(s) (rule F6b) …`);
+    for (const l of newLists) {
+      try {
+        await haloPost('/FieldInfo', [{ id: l.id, summary: 'finishing' }]);
+        await haloPost('/FieldInfo', [{ id: l.id, summary: '' }]);
+      } catch (e) {
+        l.warnings.push(`F6b save failed for field ${l.id}: ${String((e as Error).message).split('\n')[0]}`);
+      }
+    }
+  }
+}
+
 const file = saveJson(`runs/build-${apply ? 'apply' : 'dry'}-${timestamp()}.json`, { plan: planFile, apply, refs, log });
 const gaps = log.reduce((n, l) => n + l.warnings.length, 0);
 console.log(`\nRun log: ${file}`);
