@@ -32,6 +32,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | S5 | Stop at the first hard failure. Never continue a build on a broken dependency. | Half-built config pointing at nothing | `build-onboarding.ts` |
 | S7 | **Pre-flight before any write**: resolve every existing object the plan reuses or updates first. If any is missing, write nothing. | Half-built config: a run created a status and an action, then stopped on a lookup | `build-onboarding.ts` pre-flight |
 | S8 | Look names up across all name-like properties (`name`, `label`, `buttonname`, `outcome`): list rows and full records don't always use the same one. | "Not found" for objects that exist (Outcome list has only `buttonname`) | `build-onboarding.ts` `findByName` |
+| S9 | The SLA clock only runs in the SLA's working hours. A ticket raised on a Friday evening shows 0% used and its targets start Monday 09:00 (ticket 4007: respond by Mon 26 Oct 13:00, fix by Mon 2 Nov 09:00, exactly 5 working days). Test SLA pausing inside working hours. | "No SLA" reported on a ticket that has one | test guidance |
 | S6 | Never delete anything. | Irreversible damage to a live service desk | (none, by design) |
 
 ## Object-specific rules
@@ -51,6 +52,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | P1 | Approval step `type`: **10** line manager, **1** named agent, **3** approval group (CAB) + `minapprovers`, **8** ad-hoc, **42** change CAB. Approver id goes in `agent_id_or_cab_id`. Multi-stage = more steps by `sequence`. | Wrong approver | `SPIKE_MAP.approval` |
 | P2 | Teams can't approve; approval groups (CABs) do. Map "the HR team approves" to an approval group, and create one if needed. | Plan asks for something Halo can't express | planner |
 | P4 | **A line-manager approval stage errors ("Step 0") when the requester has no line manager**; it does not skip. Proven by A/B: same 2-stage process with a named agent instead works. Before building one, check how many users lack a manager and warn, or add a fallback approver. | Live tickets stuck in a broken approval | planner pre-build check (to build) |
+| P5 | What P4 looks like on a real ticket (ticket 4007, 23 Oct): stage 1 approves, then the line-manager stage creates NO approval records, the ticket gets `faultapprovalfailed: true` and `status_change_frozen: true`, and the history shows "Awaiting Approval" → "Approved". It looks auto-approved but is actually stuck. The user record read through the API (`/Users/{id}?includedetails=true`) has no manager field at all, so the pre-build check needs the field found first. | Agents think approval worked; ticket can't move | diagnose.ts; pre-build check (to build) |
 | P3 | Ignore `agent_name`/`cab_name` when reading approval steps: Halo fills both from the same id whatever the type. Read `type` + `agent_id_or_cab_id`. | Misreading who approves (shows an agent AND a group) | (reader, to build) |
 
 | U0 | Partial updates are safe: `POST [{ id, changedProp }]` leaves every other property alone (proven on FieldInfo 316). | Updates would need full objects and risk wiping config |

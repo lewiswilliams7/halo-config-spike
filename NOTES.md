@@ -114,3 +114,8 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - Real-instance update test (update-test.json) passed on gethandoveruk: field label + new option, field added to a section, field added to HR Onboarding as mandatory, member added to an approval group, new stage added to the LIVE Service Request Workflow (with approval). All verified and checked in the UI.
 - Found: HR Onboarding now has "Start Date" next to the existing "Starting Date" (my test plan's mistake). Rule F8 warns on same-meaning labels when adding fields.
 - Planner re-run with settings: 7 steps, 17 of 18 coverage calls right. Wrong: thought People Operations lacked members (team members weren't in the read). Added team members and actions per workflow stage to the read.
+
+## 2026-10-23: G2 run-through, ticket 4007 (New Joiner)
+- Stages and actions work in the UI.
+- SLA IS on the ticket: sla_id 6 "Joiner - 5 working days", respond by Mon 26 Oct 13:00, fix by Mon 2 Nov 09:00 (5 working days from Monday 09:00). Raised Friday 22:35, so 0% used. SLA built correctly; identical to Service Request SLA apart from targets. Rule S9.
+- Approval: stage 1 (People Approvers) approved (admin override by lewis). Stage 2 (line manager) created no approval records; faultapprovalfailed true, status frozen. End user Ahmed Hassan's API record has no manager field. Rule P5. Next: set his manager in the UI and re-read Users/51 to find where Halo stores it.
