@@ -19,7 +19,8 @@
     "scan": "tsx spike/scan.ts",
     "labelcheck": "tsx spike/labelcheck.ts",
     "plan": "tsx spike/plan.ts",
-    "inventory": "tsx spike/inventory.ts"
+    "inventory": "tsx spike/inventory.ts",
+    "diagnose": "tsx spike/diagnose.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"
