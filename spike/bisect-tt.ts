@@ -21,10 +21,13 @@ if (!stepId) {
   process.exit(1);
 }
 const logFile = `runs/${readdirSync(spikePath('runs')).filter((f) => f.startsWith('build-dry-') && f.endsWith('.json')).sort().at(-1)}`;
-const log = loadJson<{ log: { step: string; payload?: Row }[]; plan: { steps: { id: string; based_on?: string }[] } }>(logFile);
+type PlanLite = { steps: { id: string; based_on?: string }[] };
+const log = loadJson<{ log: { step: string; payload?: Row }[]; plan: string | PlanLite }>(logFile);
+// Run logs store the plan's file name; load it to find what the step was copied from.
+const plan: PlanLite = typeof log.plan === 'string' ? loadJson<PlanLite>(log.plan) : log.plan;
 const bad = log.log.find((e) => e.step === stepId)?.payload;
 if (!bad) throw new Error(`No payload for "${stepId}" in ${logFile}: run the dry run first.`);
-const sourceName = log.plan.steps.find((s) => s.id === stepId)?.based_on ?? 'Change Request';
+const sourceName = plan.steps.find((s) => s.id === stepId)?.based_on ?? 'Change Request';
 
 let n = 0;
 async function attempt(label: string, payload: Row): Promise<boolean> {
