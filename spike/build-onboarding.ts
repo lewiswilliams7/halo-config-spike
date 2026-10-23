@@ -195,13 +195,19 @@ for (const [i, step] of plan.steps.entries()) {
     } else {
       if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
       attempted = [payload];
-      const created = firstRecord(await haloPost(`/${t.resource}`, [payload]));
+      const { _restore_tab_display: _r, ...toSend } = payload; // builder-only notes never go to Halo
+      const created = firstRecord(await haloPost(`/${t.resource}`, [toSend]));
       if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
       refs[step.id] = { id: created.id as number, name: expectedName };
 
       // Rule F6: some objects only finish setting up on their first real save after creation.
-      if (t.afterCreate) {
-        await haloPost(`/${t.resource}`, [t.afterCreate(created.id as number)]);
+      const follow = t.afterCreate?.(created.id as number, payload);
+      if (follow) {
+        try {
+          await haloPost(`/${t.resource}`, [follow]);
+        } catch (e) {
+          warn(`Created, but the follow-up save failed: ${String((e as Error).message).split('\n')[0]} (${JSON.stringify(follow)})`);
+        }
       }
 
       // Read back and check the name stuck: the cheapest proof it really saved.

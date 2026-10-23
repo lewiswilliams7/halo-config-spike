@@ -328,7 +328,8 @@ export interface Translator {
   /** The name Halo will actually store, if it differs from what we send. Used to find and verify. */
   storedName?: (step: PlanStep) => string;
   /** A real follow-up update to send straight after creating. Some objects only finish setting up on their first save. */
-  afterCreate?: (id: number) => Record<string, unknown>;
+  /** Return null when there's nothing to do for this record. `sent` = the payload that was created. */
+  afterCreate?: (id: number, sent: Record<string, unknown>) => Record<string, unknown> | null;
   /** Property holding the record's name, if not `name` (e.g. Outcome uses `outcome`). */
   nameKey?: string;
   /** For action 'update': the partial payload (without id) to send. `current` = the record's detail read. */
@@ -602,6 +603,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
   ticket_type: {
     resource: 'TicketType',
     template: 'template-tickettype.json',
+    afterCreate: (id, sent) => (sent._restore_tab_display ? { id, tab_display: sent._restore_tab_display } : null),
     update: (step, refs, warn, current) => {
       const m = SPIKE_MAP.ticketType;
       const out: Record<string, unknown> = {};
@@ -655,6 +657,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // manually". New Joiner (copy of New Starter Request) got template 1, which switched every new ticket
       // back to New Starter Request. A new type must never inherit it.
       p.overridewiththefollowingtemplatewhenloggingmanually = -1;
+      // Rule T7 (2026-10-23): Halo rejects creating a ticket type with a tabbed form (tab_display 1) with a bare 500.
+      // Found by bisect on a copy of Change Request. Create untabbed, then switch tabs back on (afterCreate).
+      if (Number(p.tab_display) > 0) {
+        p._restore_tab_display = p.tab_display;
+        p.tab_display = 0;
+      }
       if (step.team) set(p, m.teamName, refs[step.team]?.name, 'default team', warn);
       if (step.sla) set(p, m.sla, refs[step.sla]?.id, 'default SLA', warn);
       if (step.approval) {

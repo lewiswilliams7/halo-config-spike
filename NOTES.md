@@ -128,3 +128,5 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - G5 (change management) planner: strong reuse and questions, but the dry run + plan review found: duplicate Risk/Backout Plan (caught by F8), new change types without their sections (T6), reused actions entering new stages (W4), an unused approval process and an Urgent SLA target (M4). All fixed; G5 to be re-planned.
 - G5 re-run: "Workflow already has a step named Assessment" (rule U4: updates skip what's already there). Change Scheduling dates not made mandatory: FieldInfo has two FProjectStartDate records (-19, -105); form uses -105 (rule F9).
 - Emergency Change create returned 500: payload to be captured from the next dry-run log.
+- Emergency Change 500 solved by bisect-tt (8 tries): `tab_display` 1 on create. Rule T7. Variants that ruled out: approval, SLA, ITIL type, portal fields, type-change settings, name, risk calculation, workflow, the -78 template-parent field. Hidden test types 63-66 ("zz Specflow test ...") were created during the search; remove by hand.
+- The edited Change Management Workflow was NOT the cause.
