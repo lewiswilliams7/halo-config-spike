@@ -44,7 +44,7 @@ const examples = ['plans/onboarding.json', 'plans/workflow-test.json', 'plans/ap
 const SYSTEM = `You plan Halo ITSM configuration changes. You output ONE JSON object (no prose) that a deterministic builder executes after a human approves it.
 
 THE BUILDER CAN ONLY DO THIS (anything else is unsupported):
-Plan = { "request": string, "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
+Plan = { "request": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
 Every step: { "id": unique snake_case, "object": one of below, "action": "create" | "reuse" | "update" }
 - reuse: { "match": { "name": exact existing name from the inventory } }. Use for anything that already exists.
 - create needs "name". Optional "based_on": exact name of an existing record of the same kind to copy settings from (choose a sensible, plain one; say which in assumptions).
@@ -64,6 +64,12 @@ Objects and their create properties:
 Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
 RULES
+- FIRST compare the request with the inventory, part by part (each ticket type, its fields, team, approvals, SLA, workflow), and fill existing_coverage. The customer's Halo is rarely empty.
+  - built: it already exists as asked. Reuse it; add NO steps for it.
+  - partial: it exists but is missing something. Reuse it and add only the missing pieces (or an update step).
+  - missing: create it.
+  Never create a parallel copy of something that exists ("v2", "(People Ops)", "New ..."); if the existing one can't be changed by the builder, say so in unsupported or questions instead.
+  A field matches only if its name/label fits the request; when unsure it has the right options, ask in questions rather than reuse silently.
 - Reuse what exists (exact names from the inventory), but only when it matches what the request asks for. Never create something whose name matches an existing one ignoring case (CFLaptopType vs CFlaptopType). Never invent names of existing things: anything not in the inventory must be created by an earlier step.
 - When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
 - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
@@ -101,6 +107,8 @@ function validate(plan: Plan): string[] {
       errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
     if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
     if (s.based_on && s.name && s.based_on.toLowerCase() === s.name.toLowerCase()) errors.push(`${where}: based_on is the thing being created; pick an existing record to copy from`);
+    if (s.action === 'create' && s.name && / v\d+$|\(copy\)|\bcopy of\b/i.test(s.name))
+      errors.push(`${where}: "${s.name}" looks like a copy of something that exists; reuse or update the original, or explain in questions`);
     if (s.action === 'create' && s.name && all.has(s.name.toLowerCase()))
       errors.push(`${where}: "${s.name}" already exists (names are case-insensitive): reuse it, or pick a different name`);
     if (s.copy_of && !workflowSteps[s.copy_of]) errors.push(`${where}: copy_of "${s.copy_of}" is not an existing workflow`);
@@ -149,6 +157,10 @@ for (const [i, s] of plan.steps.entries()) {
   const extra = [s.based_on && `based on "${s.based_on}"`, s.copy_of && `copy of "${s.copy_of}"`, s.type, s.insert_step && `+ step "${s.insert_step.name}"`, s.insert_steps?.length && `+ steps ${s.insert_steps.map((x) => `"${x.name}"`).join(', ')}`]
     .filter(Boolean).join(', ');
   console.log(`${String(i + 1).padStart(3)}. ${verb} ${s.object.padEnd(17)} ${what}${extra ? `  (${extra})` : ''}`);
+}
+if (plan.existing_coverage?.length) {
+  console.log('\nALREADY IN HALO:');
+  for (const c of plan.existing_coverage) console.log(`  ${c.status.toUpperCase().padEnd(8)} ${c.requirement}${c.existing ? `  (${c.existing})` : ''}`);
 }
 const list = (title: string, items?: string[]) => items?.length && console.log(`\n${title}\n${items.map((x) => `  - ${x}`).join('\n')}`);
 list('NOT SUPPORTED YET (not built):', plan.unsupported);

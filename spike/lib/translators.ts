@@ -147,6 +147,8 @@ export interface Plan {
   request: string;
   steps: PlanStep[];
   /** Planner output: parts of the request the builder can't do yet, in plain words. */
+  /** What the instance already has for each part of the request, so the plan only builds the gap. */
+  existing_coverage?: { requirement: string; status: 'built' | 'partial' | 'missing'; existing?: string }[];
   unsupported?: string[];
   /** Planner output: choices it made that the user should check (e.g. which template it based things on). */
   assumptions?: string[];
