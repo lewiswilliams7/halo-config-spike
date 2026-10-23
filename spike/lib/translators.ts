@@ -129,7 +129,7 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
     // Rule F8 (2026-10-23): "Start date" added to a form that already had "Starting Date" in a section.
     const label = String(refs[f.ref]?.row?.label ?? '');
     const twin = label ? labelsOnForm.find((l) => sameMeaning(l, label)) : undefined;
-    if (twin) warn(`add_fields: the form already has a field labelled "${twin}"; "${label}" may be a duplicate`);
+    if (twin) { warn(`add_fields: "${label}" NOT added: the form already has "${twin}" (rule F8). Make that one mandatory instead.`); continue; }
     const row: Row = { ...shape, fieldid: id, seq: ++seq };
     for (const k of m.mandatoryKeys ?? []) row[k] = level(f.mandatory);
     rows.push(row);
@@ -160,6 +160,9 @@ function applyInserts(p: Row, inserts: InsertStep[], refs: Refs): Row {
     const after = byName(ins.after_step);
     if (!after) throw new Error(`Workflow has no step named "${ins.after_step}"`);
     if (byName(ins.name)) throw new Error(`Workflow already has a step named "${ins.name}"`);
+    // Rule W4 (2026-10-23): an action already on the step can't also lead into the new stage (one button, two destinations).
+    if (((after.actions as Row[]) ?? []).some((a) => Number(a.action_id) === Number(refs[ins.enter_via]?.id)))
+      throw new Error(`"${refs[ins.enter_via]?.name}" is already an action on "${ins.after_step}"; use a new action to enter "${ins.name}"`);
     const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
     const newStage = Number(after.stage_number) + 1;
 
@@ -655,6 +658,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
         warn(`SPIKE_MAP gap: don't know how fields attach to a ticket type yet; skipped`);
       } else {
         // Replace the template's own questions, but keep Halo's standard fields (rule T5).
+        // Rule T6: a plan that names no fields and no sections means "same form as the source": keep it whole.
+        if (!step.fields?.length && !step.groups?.length) {
+          warn(`no fields or sections given: keeping the form of "${step.based_on ?? 'the template'}" as it is`);
+          p[m.fields] = keepRows(p[m.fields]);
+          return p;
+        }
         const standard = keepRows(((p[m.fields] as Row[]) ?? []).filter(isStandardRow));
         p[m.fields] = (step.fields ?? []).map((f, i) => {
           const level = f.mandatory ? m.mandatoryValue : m.optionalValue;

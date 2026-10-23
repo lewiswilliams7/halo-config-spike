@@ -122,3 +122,7 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - Lewis confirmed in the UI: a user's line manager is an AD-only field. Rule P6; planner now asks about AD manager sync before using line-manager approval.
 - New Joiner was created without Halo's standard form fields (Details, Followers): T2 replaced the whole form. Rule T5 keeps them; joiner-approval-fix.json puts them back on New Joiner and swaps line manager for a named approver (P6).
 - SLA runs on "Default Working Hours" (Mon-Fri 09:00-17:00). To test SLA pausing out of hours, set it to 24/7 in the UI.
+
+## 2026-10-23: G3 and G5
+- G3 (zero-touch rebuild, g3-rebuild.json): 50/50 on gethandoveruk, every object verified, no warnings. UI checks pending.
+- G5 (change management) planner: strong reuse and questions, but the dry run + plan review found: duplicate Risk/Backout Plan (caught by F8), new change types without their sections (T6), reused actions entering new stages (W4), an unused approval process and an Urgent SLA target (M4). All fixed; G5 to be re-planned.

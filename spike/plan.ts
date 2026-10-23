@@ -34,7 +34,14 @@ console.log(`\nReading ${INSTANCE_KEY} …`);
 const inventory = await readInventory({ progress: (m) => console.log(`  reading ${m} …`) });
 const workflowSteps = inventory.workflows_and_their_steps;
 const { details: _details, ...namesOnly } = inventory;
-const all = new Set(Object.values(namesOnly).flatMap((v) => (Array.isArray(v) ? v : Object.keys(v ?? {}))).map((n) => n.toLowerCase()));
+// Halo's standard (non-CF) fields seen on forms and sections can be reused too, e.g. to make one mandatory.
+const standardFields = [...new Set(
+  [...Object.values(inventory.details?.field_groups ?? {}).flat(), ...Object.values(inventory.details?.ticket_types ?? {}).flatMap((t) => [...((t.fields as string[]) ?? []), ...Object.values((t.groups as Record<string, string[]>) ?? {}).flat()])]
+    .map((n) => String(n).replace(/\*$/, '')).filter((n) => n && !n.startsWith('CF')),
+)];
+const all = new Set([...Object.values(namesOnly).flatMap((v) => (Array.isArray(v) ? v : Object.keys(v ?? {}))), ...standardFields].map((n) => n.toLowerCase()));
+const slaPriorities = new Set(Object.values(inventory.details?.sla_targets ?? {}).flatMap((t) => String(t).split(', ').map((x) => x.replace(/ \S+$/, '').toLowerCase())));
+const wfActions = inventory.details?.workflow_actions_by_stage ?? {};
 /** Existing names per plan object, for the near-copy check. */
 const NAMES_BY_OBJECT: Record<string, string[]> = {
   ticket_type: inventory.ticket_types, field: inventory.custom_fields, field_group: inventory.field_groups,
@@ -67,6 +74,7 @@ Objects and their create properties:
 - outcome (an action button): name, new_status: status ref (optional; set one when the action should move the ticket out of a hold status), icon: Font Awesome name (optional, default arrow-right)
 - workflow: name, copy_of: exact existing workflow name, optional insert_steps: [{ name, after_step: a step of copy_of or an EARLIER inserted step, enter_via: outcome ref (the action on after_step that moves into the new step), exits: [{ via: outcome ref, to_step: step name }] }] to chain several new stages in order. The last new stage needs an exit (e.g. to Closed). Existing steps cannot be renamed or removed.
 - ticket_type: create: name, based_on, fields: [{ref, mandatory?}], groups: [field_group refs], team: team ref, sla: sla ref, approval: approval_process ref. A ticket type created in this plan can be updated later in the same plan (e.g. to set a workflow created after it).
+  Its form = exactly the fields and groups you list, plus Halo's standard fields. based_on does NOT bring the source's sections: reuse those field groups and list them. (Listing none at all keeps the source's form unchanged.)
 UPDATES TO THINGS THAT ALREADY EXIST (action "update", "match": { "name": existing name }, "set": {...}). Prefer these over creating anything new:
 - ticket_type set: { team?: ref, sla?: ref, approval?: ref, workflow?: ref, add_groups?: [field_group refs], add_fields?: [{ref, mandatory?}], field_mandatory?: [{ref, mandatory: true|false}] } (field_mandatory = fields placed directly on the form, not inside a group)
 - field_group set: { add_fields?: [{ref, mandatory?}], field_mandatory?: [{ref, mandatory}] }
@@ -92,6 +100,11 @@ RULES
 - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
 - If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, renaming or removing existing workflow steps, rules based on field values (routing, priority, skipping approval), roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
 - Line-manager approval only works if the instance syncs managers from Active Directory / Entra (rule P6: Halo users' managers can't be set by hand). If you use {"line_manager": true}, ask in questions whether they sync managers from AD, and say the fallback (a named approver or group) in assumptions.
+- Fields: a requirement already met by a field on the form or in a section (standard Halo fields like symptom, risk or fbackoutplan count) is met: reuse that field and use field_mandatory to make it required. Never add a second field with the same meaning.
+- Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
+- Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
+- SLA targets: use only priority names that appear in inventory.details.sla_targets.
+- Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
 - Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
 - Be concise in names. Output JSON only.
 
@@ -146,9 +159,23 @@ function validate(plan: Plan): string[] {
       }
     }
     for (const r of refsOf(s)) if (!seen.has(r)) errors.push(`${where}: uses "${r}" before it is defined`);
+    for (const prio of Object.keys(s.targets ?? {}))
+      if (slaPriorities.size && !slaPriorities.has(prio.toLowerCase())) errors.push(`${where}: SLA priority "${prio}" isn't on this instance's SLAs (${[...slaPriorities].join(', ')})`);
+    if (baseWf && wfActions[baseWf]) {
+      for (const ins of inserts) {
+        const onStep = (wfActions[baseWf][ins.after_step] ?? []).map((a: string) => a.split(' → ')[0].toLowerCase());
+        const via = plan.steps.find((x) => x.id === ins.enter_via);
+        const viaName = String(via?.name ?? via?.match?.name ?? '').toLowerCase();
+        if (viaName && onStep.includes(viaName)) errors.push(`${where}: "${via?.name ?? via?.match?.name}" is already an action on "${ins.after_step}"; create a new action to enter "${ins.name}"`);
+      }
+    }
     seen.add(s.id);
     if (s.action === 'create' && s.name) createdHere.add(`${s.object}:${s.name.toLowerCase()}`);
   }
+  // Every created object (except ticket types, the end product) must be used by a later step.
+  const used = new Set((plan.steps as PlanStep[]).flatMap((x) => refsOf(x)));
+  for (const s of plan.steps as PlanStep[])
+    if (s.action === 'create' && s.object !== 'ticket_type' && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
   return errors;
 }
 
