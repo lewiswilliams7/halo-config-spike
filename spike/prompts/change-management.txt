@@ -1,0 +1,13 @@
+We need change management sorted properly in Halo. Right now people just email the infrastructure team and hope.
+
+Normal changes: whoever raises it has to tell us what's changing, why, which systems are affected (Network, Servers, Microsoft 365, Line-of-business apps, Telephony – can be more than one), the risk (Low, Medium, High), the planned start and end, a backout plan, and whether users will notice an outage. Everything except the outage question is required.
+
+Emergency changes: same details, plus the reason it can't wait. These need to be quick.
+
+Approvals: normal changes go to the CAB, two approvals needed – that's James Brown, Mary Johnson and Olivia Chen. Emergency changes only need one of Patricia Jones or Ken Yang, because it's usually out of hours. High risk normal changes should also need the IT director (Robert James) but only if it's high risk.
+
+Stages: Draft, then Assessment, then CAB approval, then Scheduled, then Implementing, then Review, then Closed. If it goes wrong during implementation we need a Rolled Back status and the clock shouldn't count while we're waiting for the change window.
+
+Targets: emergency changes resolved within 4 hours, normal changes within 10 working days.
+
+Everything should go to the Infrastructure team. Also send the CAB a reminder the day before the meeting and put changes on the change calendar.
