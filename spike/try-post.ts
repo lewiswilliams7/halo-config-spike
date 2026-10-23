@@ -47,6 +47,9 @@ const variants: [string, Record<string, unknown>][] = pairs.includes('--bisect')
       ['no apply-on-type-change settings', { apply_workflow_on_type_change: false, applydefaultsontypechangebool: false }],
       ['different name', { name: `${payload.name} Request` }],
       ['no approval, no SLA, no risk', { approval_process_id: 0, approval_process_name: '', default_sla: -1, risk_type: 0, risk_calculation: '' }],
+      ['a different workflow (Service Request Workflow (with approval))', { workflow_id: 9 }],
+      ['no template-parent field (fieldid -78)', { fields: ((payload.fields as Record<string, unknown>[]) ?? []).filter((r) => Number(r.fieldid) !== -78) }],
+      ['different workflow and no -78 field', { workflow_id: 9, fields: ((payload.fields as Record<string, unknown>[]) ?? []).filter((r) => Number(r.fieldid) !== -78) }],
     ]
   : [['as given', {}]];
 
