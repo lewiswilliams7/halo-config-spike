@@ -103,6 +103,11 @@ function sameMeaning(a: string, b: string): boolean {
   return stem(a) === stem(b);
 }
 
+/** Field name of each existing row, by row id (rule F9: standard field names aren't unique across Halo). */
+function rowNames(current: Row): Map<number, string> {
+  return new Map(((current.fields as Row[]) ?? []).map((r) => [Number(r.id), String((r.fieldinfo as Row)?.name ?? '').toLowerCase()]));
+}
+
 /** Every label shown on a form: loose fields and fields inside its sections (from the detail read). */
 function formLabels(current: Row): string[] {
   const out: string[] = [];
@@ -114,18 +119,22 @@ function formLabels(current: Row): string[] {
   return out;
 }
 
-function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void, labelsOnForm: string[] = []): Row[] {
+function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void, labelsOnForm: string[] = [], names: Map<number, string> = new Map()): Row[] {
+  // Rule F9 (2026-10-23): FProjectStartDate looked up by name was id -19, but the one on Change Scheduling is -105.
+  // Match a field to a form row by id OR by the row's own field name.
+  const sameField = (r: Row, ref: string) =>
+    Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase());
   const m = SPIKE_MAP.ticketType;
   const level = (b?: boolean) => (b ? m.mandatoryValue : m.optionalValue);
   for (const c of mand) {
-    const row = rows.find((r) => Number(r.fieldid) === Number(refs[c.ref]?.id));
+    const row = rows.find((r) => sameField(r, c.ref));
     if (!row) { warn(`field_mandatory: ${c.ref} isn't on this form; add it with add_fields`); continue; }
     for (const k of m.mandatoryKeys ?? []) row[k] = level(c.mandatory);
   }
   let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
   for (const f of add) {
     const id = Number(refs[f.ref]?.id);
-    if (rows.some((r) => Number(r.fieldid) === id)) { warn(`add_fields: ${f.ref} is already on this form`); continue; }
+    if (rows.some((r) => sameField(r, f.ref))) continue; // already there (e.g. a re-run): nothing to do
     // Rule F8 (2026-10-23): "Start date" added to a form that already had "Starting Date" in a section.
     const label = String(refs[f.ref]?.row?.label ?? '');
     const twin = label ? labelsOnForm.find((l) => sameMeaning(l, label)) : undefined;
@@ -400,7 +409,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const agents = ((current.agents as Row[]) ?? []).map((a) => ({ ...a }));
         for (const m of step.set.add_members) {
           const id = Number(refs[m]?.id);
-          if (agents.some((a) => Number(a.agent_id) === id)) { warn(`add_members: ${m} is already in the team`); continue; }
+          if (agents.some((a) => Number(a.agent_id) === id)) continue; // already in the team
           agents.push({ agent_id: id });
         }
         out.agents = agents;
@@ -460,7 +469,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         // Existing values keep their ids; new ones go on the end as { name } (same shape as on create).
         const values = ((current[m.options] as Row[]) ?? []).map((v) => ({ ...v }));
         for (const name of st.add_options) {
-          if (values.some((v) => String(v.name).toLowerCase() === name.toLowerCase())) { warn(`add_options: "${name}" is already an option`); continue; }
+          if (values.some((v) => String(v.name).toLowerCase() === name.toLowerCase())) continue; // already an option
           values.push({ name });
         }
         out[m.options] = values;
@@ -579,7 +588,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const members = ((current.members as Row[]) ?? []).map((m) => ({ ...m }));
       for (const a of step.set.add_members) {
         const id = Number(refs[a]?.id);
-        if (members.some((m) => Number(m.agent_id) === id)) { warn(`add_members: ${a} is already a member`); continue; }
+        if (members.some((m) => Number(m.agent_id) === id)) continue; // already a member
         members.push({ agent_id: id, type: 0 });
       }
       return { members };
@@ -605,11 +614,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
-        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current));
+        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn, formLabels(current), rowNames(current));
         let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
         for (const g of st.add_groups ?? []) {
           const gid = Number(refs[g]?.id);
-          if (rows.some((r) => Number(r.groupid) === gid && Number(r.fieldid) === 0)) { warn(`add_groups: ${g} is already on this form`); continue; }
+          if (rows.some((r) => Number(r.groupid) === gid && Number(r.fieldid) === 0)) continue; // already there
           rows.push({ fieldid: 0, groupid: gid, seq: ++seq, usage: 0, endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 });
         }
         if (st.copy_standard_fields_from) {
@@ -718,7 +727,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const st = step.set ?? {};
       if (!st.add_fields?.length && !st.field_mandatory?.length) { warn('update: nothing to set'); return {}; }
       const rows = keepRows(current.fields);
-      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current));
+      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn, formLabels(current), rowNames(current));
       return { fields: rows };
     },
     verifyUpdate: (back, changes) => checkFieldRows(back.fields, changes.fields, 'field group'),
@@ -780,7 +789,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // back with the new ones added; its ids stay, so tickets already on it keep their place.
     update: (step, refs, warn, current) => {
       if (!step.set?.insert_steps?.length) { warn('update: nothing to set'); return {}; }
-      const p = applyInserts({ steps: structuredClone(current.steps ?? []), stages: structuredClone(current.stages ?? []) }, step.set.insert_steps, refs);
+      // A re-run finds its stages already there: skip those (rule U4), add the rest.
+      const have = new Set(((current.steps as Row[]) ?? []).map((x) => String(x.name).toLowerCase()));
+      const todo = step.set.insert_steps.filter((i) => !have.has(i.name.toLowerCase()));
+      if (!todo.length) return {};
+      const p = applyInserts({ steps: structuredClone(current.steps ?? []), stages: structuredClone(current.stages ?? []) }, todo, refs);
       return { steps: p.steps, stages: p.stages };
     },
     verifyUpdate: (back, _changes, step) => {

@@ -126,3 +126,5 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 ## 2026-10-23: G3 and G5
 - G3 (zero-touch rebuild, g3-rebuild.json): 50/50 on gethandoveruk, every object verified, no warnings. UI checks pending.
 - G5 (change management) planner: strong reuse and questions, but the dry run + plan review found: duplicate Risk/Backout Plan (caught by F8), new change types without their sections (T6), reused actions entering new stages (W4), an unused approval process and an Urgent SLA target (M4). All fixed; G5 to be re-planned.
+- G5 re-run: "Workflow already has a step named Assessment" (rule U4: updates skip what's already there). Change Scheduling dates not made mandatory: FieldInfo has two FProjectStartDate records (-19, -105); form uses -105 (rule F9).
+- Emergency Change create returned 500: payload to be captured from the next dry-run log.
