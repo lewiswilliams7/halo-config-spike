@@ -37,6 +37,7 @@ const all = new Set(Object.values(inventory).flatMap((v) => (Array.isArray(v) ? 
 
 // ---------- 2. ask the model ----------
 const examples = ['plans/onboarding.json', 'plans/workflow-test.json', 'plans/approval-test-2.json', 'plans/tier1-test-2.json']
+  // jml-enterprise.json is deliberately NOT an example: it's the answer key for the G1 planner test.
   .map((f) => JSON.stringify(loadJson(f)))
   .join('\n\n');
 
@@ -50,20 +51,21 @@ Every step: { "id": unique snake_case, "object": one of below, "action": "create
 Objects and their create properties:
 - field: name "CF"+PascalCase (unique, not in inventory), label, type: text|memo|date|dropdown|checkbox|multiselect, options: string[] (dropdown/multiselect only)
 - field_group: name, label (section header), fields: [{ref, mandatory?}]
-- team: name, members: [agent step refs]
+- team: name, members: [agent step refs], department_of: ref of a REUSED team whose department it joins (use with based_on that team). Always set both, or the team lands in a random department.
 - agent: REUSE ONLY (people with licences; never create)
 - approval_group: name, members: [agent refs], approvals_needed: number
 - approval_process: name, approvers: ordered list, each ONE of {"group": ref, "min": n} | {"agent": ref} | {"line_manager": true} | {"adhoc": true}
-- sla: name, resolve_days: number (same target for every priority)
-- status: name, sla_action: "hold" to pause the SLA while in it (omit otherwise)
-- outcome (an action button): name, new_status: status ref (optional)
-- workflow: name, copy_of: exact existing workflow name, optional insert_step: { name, after_step: an existing step name of copy_of, enter_via: outcome ref, exits: [{ via: outcome ref, to_step: existing step name }] }. ONE inserted step per workflow, nothing else.
-- ticket_type: create: name, based_on, fields: [{ref, mandatory?}], groups: [field_group refs], team: team ref, sla: sla ref, approval: approval_process ref. update: match + set: { workflow?: ref, approval?: ref } (only these two).
+- sla: name, and EITHER resolve_days: number (same target for every priority) OR targets: { "<priority name>": "4h" | "2d" } (per-priority)
+- status: create { name, sla_action: "hold" to pause the SLA while in it } or reuse an existing status by name
+- outcome (an action button): name, new_status: status ref (optional; set one when the action should move the ticket out of a hold status), icon: Font Awesome name (optional, default arrow-right)
+- workflow: name, copy_of: exact existing workflow name, optional insert_steps: [{ name, after_step: a step of copy_of or an EARLIER inserted step, enter_via: outcome ref (the action on after_step that moves into the new step), exits: [{ via: outcome ref, to_step: step name }] }] to chain several new stages in order. The last new stage needs an exit (e.g. to Closed). Existing steps cannot be renamed or removed.
+- ticket_type: create: name, based_on, fields: [{ref, mandatory?}], groups: [field_group refs], team: team ref, sla: sla ref, approval: approval_process ref. update: match + set: { workflow?: ref, approval?: ref }. A ticket type created in this plan can be updated later in the same plan (e.g. to set a workflow created after it).
+- team update: match + set: { department_of: ref }
 Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
 RULES
 - Reuse what exists (exact names from the inventory). Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
-- If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, multiple new workflow steps, different SLA targets per priority, roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
+- If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, renaming or removing existing workflow steps, rules based on field values (routing, priority, skipping approval), roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
 - Line-manager approval fails for requesters with no line manager set: if you use it, add an assumption saying so.
 - If something is ambiguous and a wrong guess would be costly, put it in "questions" and still plan the rest.
 - Be concise in names. Output JSON only.
@@ -84,6 +86,7 @@ function validate(plan: Plan): string[] {
   const errors: string[] = [];
   if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];
   const seen = new Set<string>();
+  const createdHere = new Set<string>();
   for (const s of plan.steps as PlanStep[]) {
     const where = `step "${s.id}"`;
     if (!s.id) errors.push('a step has no id');
@@ -92,7 +95,7 @@ function validate(plan: Plan): string[] {
     if (!['create', 'reuse', 'update'].includes(s.action)) errors.push(`${where}: unknown action "${s.action}"`);
     if (s.action === 'create' && !s.name) errors.push(`${where}: create needs a name`);
     if (s.object === 'agent' && s.action === 'create') errors.push(`${where}: agents can only be reused`);
-    if ((s.action === 'reuse' || s.action === 'update') && !all.has(String(s.match?.name ?? '').toLowerCase()))
+    if ((s.action === 'reuse' || s.action === 'update') && !all.has(String(s.match?.name ?? '').toLowerCase()) && !createdHere.has(`${s.object}:${String(s.match?.name ?? '').toLowerCase()}`))
       errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
     if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
     if (s.copy_of && !workflowSteps[s.copy_of]) errors.push(`${where}: copy_of "${s.copy_of}" is not an existing workflow`);
@@ -100,13 +103,15 @@ function validate(plan: Plan): string[] {
     if (inserts.length && s.copy_of && workflowSteps[s.copy_of]) {
       const stepsOf = workflowSteps[s.copy_of].map((n) => n.toLowerCase());
       for (const ins of inserts) {
-        for (const n of [ins.after_step, ...ins.exits.map((e) => e.to_step)])
+        if (!stepsOf.includes(String(ins.after_step).toLowerCase())) errors.push(`${where}: "${ins.after_step}" is not a step of "${s.copy_of}" (or an earlier inserted step)`);
+        stepsOf.push(ins.name.toLowerCase()); // an exit may stay on the new step itself (e.g. Equipment Ordered)
+        for (const n of ins.exits.map((e) => e.to_step))
           if (!stepsOf.includes(String(n).toLowerCase())) errors.push(`${where}: "${n}" is not a step of "${s.copy_of}" (or an earlier inserted step)`);
-        stepsOf.push(ins.name.toLowerCase());
       }
     }
     for (const r of refsOf(s)) if (!seen.has(r)) errors.push(`${where}: uses "${r}" before it is defined`);
     seen.add(s.id);
+    if (s.action === 'create' && s.name) createdHere.add(`${s.object}:${s.name.toLowerCase()}`);
   }
   return errors;
 }
@@ -136,7 +141,7 @@ console.log(`\n${'='.repeat(70)}\nPLAN  (${plan.steps.length} steps)\n${'='.repe
 for (const [i, s] of plan.steps.entries()) {
   const verb = s.action === 'reuse' ? 'reuse ' : s.action === 'update' ? 'update' : 'create';
   const what = s.name ?? s.match?.name ?? '';
-  const extra = [s.based_on && `based on "${s.based_on}"`, s.copy_of && `copy of "${s.copy_of}"`, s.type, s.insert_step && `+ step "${s.insert_step.name}"`]
+  const extra = [s.based_on && `based on "${s.based_on}"`, s.copy_of && `copy of "${s.copy_of}"`, s.type, s.insert_step && `+ step "${s.insert_step.name}"`, s.insert_steps?.length && `+ steps ${s.insert_steps.map((x) => `"${x.name}"`).join(', ')}`]
     .filter(Boolean).join(', ');
   console.log(`${String(i + 1).padStart(3)}. ${verb} ${s.object.padEnd(17)} ${what}${extra ? `  (${extra})` : ''}`);
 }
