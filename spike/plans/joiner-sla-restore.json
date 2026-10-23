@@ -1,0 +1,7 @@
+{
+  "request": "Undo the A/B test: put New Joiner back on its own 5-working-day SLA.",
+  "steps": [
+    { "id": "sla_joiner", "object": "sla", "action": "reuse", "match": { "name": "Joiner - 5 working days" } },
+    { "id": "tt_joiner", "object": "ticket_type", "action": "update", "match": { "name": "New Joiner" }, "set": { "sla": "sla_joiner" } }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "request": "A/B test for the missing SLA clock: put New Joiner on the out-of-the-box 24 Hour SLA. If the clock shows, our built SLA is missing something; if not, it's the ticket type.",
+  "steps": [
+    { "id": "sla_24", "object": "sla", "action": "reuse", "match": { "name": "24 Hour SLA" } },
+    { "id": "tt_joiner", "object": "ticket_type", "action": "update", "match": { "name": "New Joiner" }, "set": { "sla": "sla_24" } }
+  ]
+}
