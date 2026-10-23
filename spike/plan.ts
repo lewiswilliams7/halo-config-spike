@@ -91,7 +91,7 @@ RULES
 - When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
 - based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
 - If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, renaming or removing existing workflow steps, rules based on field values (routing, priority, skipping approval), roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
-- Line-manager approval fails for requesters with no line manager set: if you use it, add an assumption saying so.
+- Line-manager approval only works if the instance syncs managers from Active Directory / Entra (rule P6: Halo users' managers can't be set by hand). If you use {"line_manager": true}, ask in questions whether they sync managers from AD, and say the fallback (a named approver or group) in assumptions.
 - Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
 - Be concise in names. Output JSON only.
 
