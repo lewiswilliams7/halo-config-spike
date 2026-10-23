@@ -28,6 +28,23 @@ import { type Plan, type Refs, refsOf, translators } from './lib/translators.js'
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
+// Rule B1 (2026-10-23): an apply first dry-runs the WHOLE plan; any warning or failure means nothing is written.
+// (G5 applied with two warnings showing in its dry run and stopped at step 32 of 32.) --allow-warnings overrides.
+const allowWarnings = args.includes('--allow-warnings');
+if (apply && !process.env.SPECFLOW_DRY_GATE) {
+  const { spawnSync } = await import('node:child_process');
+  const dry = spawnSync(process.execPath, [...process.execArgv, process.argv[1], ...args.filter((a) => a !== '--apply')], {
+    env: { ...process.env, SPECFLOW_DRY_GATE: '1' }, encoding: 'utf8',
+  });
+  const out = `${dry.stdout ?? ''}${dry.stderr ?? ''}`;
+  const problems = out.split('\n').filter((l) => /^\s+! |✗|FAILED|Pre-flight failed|Error:/.test(l));
+  if (dry.status !== 0 || (problems.length && !allowWarnings)) {
+    const detail = dry.status !== 0 ? out.trim().split('\n').slice(-12) : problems;
+    console.error(`\nNot applied: the dry run found a problem. Nothing was written.\n${detail.map((l) => `  ${l.trim()}`).join('\n')}\n\nFix the plan${dry.status === 0 ? `, or re-run with --allow-warnings if you've checked each one` : ''}.\n`);
+    process.exit(1);
+  }
+  console.log('Dry run clean: applying.');
+}
 const planIdx = args.indexOf('--plan');
 let planFile = planIdx >= 0 ? args[planIdx + 1] : 'plans/onboarding.json';
 // --plan latest = the newest plan the planner saved in plans/generated/
@@ -102,6 +119,7 @@ for (const [i, step] of plan.steps.entries()) {
   const warnings: string[] = [];
   const warn = (m: string) => warnings.push(m);
 
+  let attempted: unknown; // what was about to be sent, so a failure can be diagnosed from the run log
   try {
     if (step.action === 'reuse') {
       const found = await findByName(t.resource, step.match?.name ?? '', t.nameKey);
@@ -144,7 +162,9 @@ for (const [i, step] of plan.steps.entries()) {
         log.push({ step: step.id, object: step.object, outcome: 'would update', id: target.id, warnings, payload: changes });
         console.log(`· ${label}  would update id ${target.id}: ${describe(changes)}`);
       } else {
-        await haloPost(`/${t.resource}`, [{ id: target.id, ...changes }]);
+        if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
+        attempted = [{ id: target.id, ...changes }];
+        await haloPost(`/${t.resource}`, attempted as unknown[]);
         const back = firstRecord(await haloGet(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
         const bad = t.verifyUpdate
           ? t.verifyUpdate(back, changes, step, refs)
@@ -173,6 +193,8 @@ for (const [i, step] of plan.steps.entries()) {
       log.push({ step: step.id, object: step.object, outcome: 'would create', warnings, payload });
       console.log(`· ${label}  would create`);
     } else {
+      if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
+      attempted = [payload];
       const created = firstRecord(await haloPost(`/${t.resource}`, [payload]));
       if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
       refs[step.id] = { id: created.id as number, name: expectedName };
@@ -193,7 +215,7 @@ for (const [i, step] of plan.steps.entries()) {
     for (const w of warnings) console.log(`    ! ${w}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    log.push({ step: step.id, object: step.object, outcome: 'failed', warnings, error: message });
+    log.push({ step: step.id, object: step.object, outcome: 'failed', warnings, error: message, payload: attempted });
     console.log(`✗ ${label}  FAILED\n    ${message.split('\n').join('\n    ')}`);
     console.log('\nStopped at first failure. Nothing after this step was attempted.');
     break;

@@ -86,6 +86,12 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | M3 | Never create a near-copy of an existing object (same name plus a suffix, "v2", "(copy)"): update the original. The planner's checks reject it. | Duplicate workflows, groups and ticket types on live instances | `plan.ts` validate |
 | M4 | The planner must not create objects nothing uses (an approval process kept "for later"), must reuse Halo's standard fields (symptom, risk, fbackoutplan) instead of adding look-alikes, must update an existing ticket type that already covers a requested one, and may only use priorities that exist on the instance's SLAs. | Unused approval, duplicate Risk/Backout fields, "Normal Change" next to Change Request, Urgent target skipped (G5) | `plan.ts` rules + validate |
 
+## Build safety
+
+| # | Rule | Symptom it prevents | Where |
+|---|---|---|---|
+| B1 | An apply first dry-runs the whole plan; any warning, pre-flight gap or failure means nothing is written (`--allow-warnings` overrides after checking). Each step also refuses to write if it raised a warning. A failed step logs exactly what it tried to send. | G5 was applied with two warnings showing and stopped at step 32 of 32, half-built | `build-onboarding.ts` |
+
 ## After a build
 
 | # | Rule | Without it |
