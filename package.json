@@ -20,7 +20,8 @@
     "labelcheck": "tsx spike/labelcheck.ts",
     "plan": "tsx spike/plan.ts",
     "inventory": "tsx spike/inventory.ts",
-    "diagnose": "tsx spike/diagnose.ts"
+    "diagnose": "tsx spike/diagnose.ts",
+    "try-post": "tsx spike/try-post.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"
