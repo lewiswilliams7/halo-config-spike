@@ -1,0 +1,619 @@
+{
+  "request": "G3 zero-touch rebuild: the full JML plan again with every new object named 'G3 ...', built from nothing next to the original. Pass = every object verified, no hand fixes, and the UI checks below all pass.",
+  "steps": [
+    {
+      "id": "ag_kaleem",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Kaleem Smith"
+      }
+    },
+    {
+      "id": "ag_jennifer",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Jennifer Williams"
+      }
+    },
+    {
+      "id": "ag_robert",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Robert James"
+      }
+    },
+    {
+      "id": "ag_ken",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Ken Yang"
+      }
+    },
+    {
+      "id": "team_hr",
+      "object": "team",
+      "action": "reuse",
+      "match": {
+        "name": "Human Resources"
+      }
+    },
+    {
+      "id": "team_people",
+      "object": "team",
+      "action": "create",
+      "name": "G3 People Operations",
+      "based_on": "Human Resources",
+      "department_of": "team_hr",
+      "members": [
+        "ag_kaleem",
+        "ag_jennifer"
+      ]
+    },
+    {
+      "id": "team_people_dept",
+      "object": "team",
+      "action": "update",
+      "match": {
+        "name": "G3 People Operations"
+      },
+      "set": {
+        "department_of": "team_hr"
+      }
+    },
+    {
+      "id": "grp_people",
+      "object": "approval_group",
+      "action": "create",
+      "name": "G3 People Approvers",
+      "members": [
+        "ag_jennifer",
+        "ag_kaleem"
+      ],
+      "approvals_needed": 1
+    },
+    {
+      "id": "grp_itsec",
+      "object": "approval_group",
+      "action": "create",
+      "name": "G3 IT Security Approvers",
+      "members": [
+        "ag_robert"
+      ],
+      "approvals_needed": 1
+    },
+    {
+      "id": "f_j_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerFullName",
+      "label": "Full name",
+      "type": "text"
+    },
+    {
+      "id": "f_j_title",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerJobTitle",
+      "label": "Job title",
+      "type": "text"
+    },
+    {
+      "id": "f_j_start",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerStartDate",
+      "label": "Start date",
+      "type": "date"
+    },
+    {
+      "id": "f_j_dept",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerDepartment",
+      "label": "Department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_j_office",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerOffice",
+      "label": "Office",
+      "type": "dropdown",
+      "options": [
+        "London",
+        "Birmingham",
+        "Remote"
+      ]
+    },
+    {
+      "id": "f_j_contract",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerContractType",
+      "label": "Contract type",
+      "type": "dropdown",
+      "options": [
+        "Permanent",
+        "Fixed-term",
+        "Contractor"
+      ]
+    },
+    {
+      "id": "f_j_manager",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerManager",
+      "label": "Manager",
+      "type": "text"
+    },
+    {
+      "id": "f_j_end",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerContractEnd",
+      "label": "Contract end date (contractors)",
+      "type": "date"
+    },
+    {
+      "id": "f_j_laptop",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerLaptop",
+      "label": "Laptop type",
+      "type": "dropdown",
+      "options": [
+        "Standard",
+        "Developer",
+        "Executive"
+      ]
+    },
+    {
+      "id": "f_j_monitors",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerMonitors",
+      "label": "Extra monitors",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_j_mobile",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerMobile",
+      "label": "Mobile phone",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_j_software",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerSoftware",
+      "label": "Software",
+      "type": "multiselect",
+      "options": [
+        "Office 365",
+        "Salesforce",
+        "Adobe",
+        "Jira"
+      ]
+    },
+    {
+      "id": "f_j_admin",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3JoinerAdminRights",
+      "label": "Admin rights",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_m_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3MoverEmployee",
+      "label": "Employee name",
+      "type": "text"
+    },
+    {
+      "id": "f_m_from",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3MoverCurrentDept",
+      "label": "Current department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_m_to",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3MoverNewDept",
+      "label": "New department",
+      "type": "dropdown",
+      "options": [
+        "HR",
+        "IT",
+        "Finance",
+        "Sales",
+        "Operations"
+      ]
+    },
+    {
+      "id": "f_m_date",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3MoverEffectiveDate",
+      "label": "Effective date",
+      "type": "date"
+    },
+    {
+      "id": "f_m_access",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3MoverAccessChange",
+      "label": "System access needs changing",
+      "type": "checkbox"
+    },
+    {
+      "id": "f_l_name",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3LeaverEmployee",
+      "label": "Employee name",
+      "type": "text"
+    },
+    {
+      "id": "f_l_date",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3LeaverDate",
+      "label": "Leaving date",
+      "type": "date"
+    },
+    {
+      "id": "f_l_reason",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3LeaverReason",
+      "label": "Reason for leaving",
+      "type": "dropdown",
+      "options": [
+        "Resignation",
+        "Dismissal",
+        "Retirement",
+        "End of contract"
+      ]
+    },
+    {
+      "id": "f_l_kit",
+      "object": "field",
+      "action": "create",
+      "name": "CFG3LeaverHasKit",
+      "label": "Has company equipment to return",
+      "type": "checkbox"
+    },
+    {
+      "id": "fg_joiner",
+      "object": "field_group",
+      "action": "create",
+      "name": "G3 Joiner Details",
+      "label": "New joiner",
+      "fields": [
+        {
+          "ref": "f_j_name"
+        },
+        {
+          "ref": "f_j_title"
+        },
+        {
+          "ref": "f_j_start",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_dept",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_office",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_contract",
+          "mandatory": true
+        },
+        {
+          "ref": "f_j_manager"
+        },
+        {
+          "ref": "f_j_end"
+        }
+      ]
+    },
+    {
+      "id": "fg_equipment",
+      "object": "field_group",
+      "action": "create",
+      "name": "G3 Joiner Equipment",
+      "label": "Equipment and access",
+      "fields": [
+        {
+          "ref": "f_j_laptop"
+        },
+        {
+          "ref": "f_j_monitors"
+        },
+        {
+          "ref": "f_j_mobile"
+        },
+        {
+          "ref": "f_j_software"
+        },
+        {
+          "ref": "f_j_admin"
+        }
+      ]
+    },
+    {
+      "id": "fg_mover",
+      "object": "field_group",
+      "action": "create",
+      "name": "G3 Mover Details",
+      "label": "Mover",
+      "fields": [
+        {
+          "ref": "f_m_name",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_from"
+        },
+        {
+          "ref": "f_m_to",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_date",
+          "mandatory": true
+        },
+        {
+          "ref": "f_m_access"
+        }
+      ]
+    },
+    {
+      "id": "fg_leaver",
+      "object": "field_group",
+      "action": "create",
+      "name": "G3 Leaver Details",
+      "label": "Leaver",
+      "fields": [
+        {
+          "ref": "f_l_name",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_date",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_reason",
+          "mandatory": true
+        },
+        {
+          "ref": "f_l_kit"
+        }
+      ]
+    },
+    {
+      "id": "sla_joiner",
+      "object": "sla",
+      "action": "create",
+      "name": "G3 Joiner - 5 working days",
+      "based_on": "Service Request SLA",
+      "resolve_days": 5
+    },
+    {
+      "id": "sla_mover",
+      "object": "sla",
+      "action": "create",
+      "name": "G3 Mover - 3 working days",
+      "based_on": "Service Request SLA",
+      "resolve_days": 3
+    },
+    {
+      "id": "sla_leaver",
+      "object": "sla",
+      "action": "create",
+      "name": "G3 Leaver - 1 day, critical 4 hours",
+      "based_on": "Service Request SLA",
+      "targets": {
+        "Critical": "4h",
+        "High": "1d",
+        "Medium": "1d",
+        "Low": "1d"
+      }
+    },
+    {
+      "id": "appr_joiner",
+      "object": "approval_process",
+      "action": "create",
+      "name": "G3 Joiner approval (People, then named approver)",
+      "based_on": "Line Manager Approval Process",
+      "approvers": [
+        {
+          "group": "grp_people",
+          "min": 1
+        },
+        {
+          "agent": "ag_ken"
+        }
+      ]
+    },
+    {
+      "id": "appr_mover",
+      "object": "approval_process",
+      "action": "create",
+      "name": "G3 Mover approval (People)",
+      "based_on": "Line Manager Approval Process",
+      "approvers": [
+        {
+          "group": "grp_people",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "id": "st_inprogress",
+      "object": "status",
+      "action": "reuse",
+      "match": {
+        "name": "In Progress"
+      }
+    },
+    {
+      "id": "o_hr_done",
+      "object": "outcome",
+      "action": "create",
+      "name": "G3 HR Checks Complete",
+      "new_status": "st_inprogress"
+    },
+    {
+      "id": "o_accounts",
+      "object": "outcome",
+      "action": "create",
+      "name": "G3 Accounts Created",
+      "new_status": "st_inprogress"
+    },
+    {
+      "id": "o_desk",
+      "object": "outcome",
+      "action": "create",
+      "name": "G3 Desk and Pass Ready"
+    },
+    {
+      "id": "o_kit",
+      "object": "outcome",
+      "action": "reuse",
+      "match": {
+        "name": "Equipment Ordered"
+      }
+    },
+    {
+      "id": "wf_joiner",
+      "object": "workflow",
+      "action": "create",
+      "name": "G3 Joiner Workflow",
+      "copy_of": "Service Request Workflow (with approval)",
+      "insert_steps": [
+        {
+          "name": "IT Provisioning",
+          "after_step": "Request Fulfilment",
+          "enter_via": "o_hr_done",
+          "exits": [
+            {
+              "via": "o_kit",
+              "to_step": "IT Provisioning"
+            }
+          ]
+        },
+        {
+          "name": "Facilities",
+          "after_step": "IT Provisioning",
+          "enter_via": "o_accounts",
+          "exits": [
+            {
+              "via": "o_desk",
+              "to_step": "Closed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tt_joiner",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "G3 New Joiner",
+      "based_on": "New Starter Request",
+      "groups": [
+        "fg_joiner",
+        "fg_equipment"
+      ],
+      "team": "team_people",
+      "sla": "sla_joiner",
+      "approval": "appr_joiner"
+    },
+    {
+      "id": "tt_joiner_wf",
+      "object": "ticket_type",
+      "action": "update",
+      "match": {
+        "name": "G3 New Joiner"
+      },
+      "set": {
+        "workflow": "wf_joiner"
+      }
+    },
+    {
+      "id": "tt_mover",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "G3 Mover",
+      "based_on": "Employee Transfer Request",
+      "groups": [
+        "fg_mover"
+      ],
+      "team": "team_people",
+      "sla": "sla_mover",
+      "approval": "appr_mover"
+    },
+    {
+      "id": "tt_leaver",
+      "object": "ticket_type",
+      "action": "create",
+      "name": "G3 Leaver",
+      "based_on": "Leaver Request",
+      "groups": [
+        "fg_leaver"
+      ],
+      "team": "team_people",
+      "sla": "sla_leaver"
+    }
+  ],
+  "assumptions": [
+    "\"HR checks\" is the existing Request Fulfilment step (People Operations works it), because renaming existing workflow steps isn't supported. The ticket then moves: HR Checks Complete → IT Provisioning → Accounts Created → Facilities → Desk and Pass Ready → Closed.",
+    "\"SLA stops while waiting for kit\": IT use the existing Equipment Ordered action in IT Provisioning, which moves the ticket to Awaiting Equipment (SLA on hold). Accounts Created puts it back to In Progress, so the clock restarts for Facilities.",
+    "The copied workflow keeps its original Resolve Ticket shortcut from Request Fulfilment to Closed; removing existing transitions isn't supported.",
+    "Leaver is based on the existing Leaver Request type and keeps whatever approval/workflow that type already has.",
+    "Dismissal leavers aren't automatically made Critical: agents set priority Critical to get the 4-hour target.",
+    "Ticket types are based on New Starter Request, Employee Transfer Request and Leaver Request; SLAs and approvals on Service Request SLA and Line Manager Approval Process.",
+    "People Operations sits in the same department as Human Resources and copies that team's settings.",
+    "G3 run: names prefixed so nothing clashes with the first build. Nothing is deleted.",
+    "Line-manager approval replaced by Ken Yang as a named approver: this instance has no AD manager sync (rule P6)."
+  ],
+  "unsupported": [
+    "Contract end date only appearing/required when contract type is Contractor (conditional field visibility): built as an optional field instead.",
+    "IT Security approval only when Salesforce or admin rights are requested (conditional approval stage): the IT Security Approvers group is created but not added to the joiner approval.",
+    "Dismissals skipping approval and routing straight to IT, and automatically getting the 4-hour target (rules based on field values).",
+    "Child tickets for each piece of kit from IT provisioning.",
+    "Emails to the manager on approval and to the requester when IT provisioning finishes.",
+    "People > Joiners / Movers / Leavers categories (categories not supported yet; this instance's API also returned none)."
+  ]
+}
