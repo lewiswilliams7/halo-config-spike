@@ -669,7 +669,6 @@ export const translators: Record<PlanStep['object'], Translator> = {
         // Replace the template's own questions, but keep Halo's standard fields (rule T5).
         // Rule T6: a plan that names no fields and no sections means "same form as the source": keep it whole.
         if (!step.fields?.length && !step.groups?.length) {
-          warn(`no fields or sections given: keeping the form of "${step.based_on ?? 'the template'}" as it is`);
           p[m.fields] = keepRows(p[m.fields]);
           return p;
         }

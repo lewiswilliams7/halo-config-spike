@@ -1,0 +1,13 @@
+{
+  "request": "G5 finish + 500 bisect: create Emergency Change as a whole copy of Change Request's form (rule T6), then add the 'reason it can't wait' field as a separate update. If the create works, the 500 came from our rebuilt form rows.",
+  "steps": [
+    { "id": "team_infra", "object": "team", "action": "reuse", "match": { "name": "Infrastructure" } },
+    { "id": "sla_emergency", "object": "sla", "action": "reuse", "match": { "name": "Emergency Change - 4 hours" } },
+    { "id": "appr_emergency", "object": "approval_process", "action": "reuse", "match": { "name": "Emergency Change (1 of 2)" } },
+    { "id": "f_emerg_reason", "object": "field", "action": "reuse", "match": { "name": "CFemergencyChangeReason" } },
+    { "id": "tt_emergency", "object": "ticket_type", "action": "create", "name": "Emergency Change", "based_on": "Change Request",
+      "team": "team_infra", "sla": "sla_emergency", "approval": "appr_emergency" },
+    { "id": "tt_emergency_reason", "object": "ticket_type", "action": "update", "match": { "name": "Emergency Change" },
+      "set": { "add_fields": [{ "ref": "f_emerg_reason", "mandatory": true }] } }
+  ]
+}
