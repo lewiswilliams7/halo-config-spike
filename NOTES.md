@@ -103,3 +103,11 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - People Operations "missing": it was created (id 12) but in department "Handover - IT" (3), copied from template team 1st Line Support, and with live chat on. Rule T3: copy from a team in the right department (`based_on`) and set `department_of`.
 - New Joiner (57) vs New Starter Request (17): no field points back at 17 (initial_status 17 is a status id). New Joiner has its own two field groups (33, 34), its own workflow, SLA, approval and team. If a "New Joiner" link opens the New Starter form, it isn't the ticket type; still to find where the link lives.
 - Found it: New Joiner inherited `overridewiththefollowingtemplatewhenloggingmanually = 1` from New Starter Request; template 1 sets the type back to New Starter Request. Rule T4: reset to -1 on create. Existing 57/58/59 fixed with `npm run update`.
+
+## 2026-10-23: planner test (G1) on a populated instance
+
+- gpt-4.1: invalid after retry; half reuse/half create, near-duplicate field, invented workflow, no stages.
+- gpt-5: valid first time, consultant-quality questions (CFJoinerManager vs requester's manager), but rebuilt the existing JML as "v2" copies.
+- gpt-5 + gap analysis: 17 steps, no duplicate ticket types; still marked built things as partial, near-duplicate approval groups and field, 8 questions. Cause: inventory had names only.
+- Fixes: detailed inventory (M2), updates to existing objects (U2, U3, W3, F7, team/approval-group members, status hold), near-copy rejection (M3), max 4 questions.
+- Fixed bug: rule O3 icon had been applied to statuses, not actions.

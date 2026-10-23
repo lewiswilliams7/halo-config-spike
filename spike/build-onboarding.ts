@@ -120,16 +120,27 @@ for (const [i, step] of plan.steps.entries()) {
         }
       }
       if (!target) throw new Error(`No ${t.resource} named "${step.match?.name}" to update.`);
-      const changes = t.update(step, refs, warn);
-      refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey) };
-      if (!apply) {
+      // Updates are computed from the record as it is NOW (e.g. a form's existing rows, rule U2).
+      const current = firstRecord(await haloGet(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+      const changes = t.update(step, refs, warn, current);
+      // Drop no-op changes (value already as wanted), so "nothing to change" is reported honestly.
+      for (const k of Object.keys(changes)) if (JSON.stringify(changes[k]) === JSON.stringify(current[k])) delete changes[k];
+      refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey), row: current };
+      const describe = (c: Record<string, unknown>) =>
+        Object.entries(c).map(([k, v]) => (Array.isArray(v) ? `${k}: ${v.length} rows (was ${Array.isArray(current[k]) ? (current[k] as unknown[]).length : 0})` : `${k}: ${JSON.stringify(current[k])} → ${JSON.stringify(v)}`)).join('; ');
+      if (!Object.keys(changes).length) {
+        log.push({ step: step.id, object: step.object, outcome: 'reused', id: target.id, warnings });
+        console.log(`✓ ${label}  nothing to change on id ${target.id}`);
+      } else if (!apply) {
         log.push({ step: step.id, object: step.object, outcome: 'would update', id: target.id, warnings, payload: changes });
-        console.log(`· ${label}  would update id ${target.id}: ${JSON.stringify(changes)}`);
+        console.log(`· ${label}  would update id ${target.id}: ${describe(changes)}`);
       } else {
         await haloPost(`/${t.resource}`, [{ id: target.id, ...changes }]);
         const back = firstRecord(await haloGet(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
-        const bad = Object.keys(changes).filter((k) => JSON.stringify(back[k]) !== JSON.stringify(changes[k]));
-        for (const k of bad) warn(`Update not saved: ${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(changes[k])}`);
+        const bad = t.verifyUpdate
+          ? t.verifyUpdate(back, changes, step, refs)
+          : Object.keys(changes).filter((k) => JSON.stringify(back[k]) !== JSON.stringify(changes[k])).map((k) => `${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(changes[k])}`);
+        for (const b of bad) warn(`Update not saved: ${b}`);
         log.push({ step: step.id, object: step.object, outcome: 'updated', id: target.id, warnings, payload: changes });
         console.log(`~ ${label}  updated id ${target.id}${bad.length ? '' : ', verified'}`);
       }

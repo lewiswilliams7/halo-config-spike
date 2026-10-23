@@ -9,8 +9,8 @@ import { INSTANCE_KEY, SPIKE_DIR } from './lib/halo.js';
 import { readInventory } from './lib/inventory.js';
 
 console.log(`\nReading ${INSTANCE_KEY} (read-only) …`);
-const inv = await readInventory();
-for (const [k, v] of Object.entries(inv)) console.log(`  ${k.padEnd(28)} ${Array.isArray(v) ? v.length : Object.keys(v).length}`);
+const inv = await readInventory({ progress: (m) => console.log(`  reading ${m} …`) });
+for (const [k, v] of Object.entries(inv)) if (k !== 'details' && v) console.log(`  ${k.padEnd(28)} ${Array.isArray(v) ? v.length : Object.keys(v).length}`);
 const out = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(out, JSON.stringify({ instance: INSTANCE_KEY, inventory: inv }, null, 2));
 console.log(`\n→ ${out}\nAttach SEND-TO-CLAUDE.txt in the chat.\n`);

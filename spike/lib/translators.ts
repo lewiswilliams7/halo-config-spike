@@ -74,6 +74,104 @@ function departmentOf(ref: string, refs: Refs, warn: (m: string) => void): Recor
   return { department_id: row.department_id };
 }
 
+type Row = Record<string, unknown>;
+
+/** Existing rows of a field list, ready to send back: nested display objects dropped (rule U2). */
+function keepRows(rows: unknown): Row[] {
+  return ((rows as Row[]) ?? []).map((r) => {
+    const { group: _g, fieldinfo: _f, ...rest } = r;
+    return rest;
+  });
+}
+
+/** Add fields / change mandatory on a list of field rows (ticket type or field group). */
+function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: boolean }[] = [], mand: { ref: string; mandatory: boolean }[] = [], shape: Row, warn: (m: string) => void): Row[] {
+  const m = SPIKE_MAP.ticketType;
+  const level = (b?: boolean) => (b ? m.mandatoryValue : m.optionalValue);
+  for (const c of mand) {
+    const row = rows.find((r) => Number(r.fieldid) === Number(refs[c.ref]?.id));
+    if (!row) { warn(`field_mandatory: ${c.ref} isn't on this form; add it with add_fields`); continue; }
+    for (const k of m.mandatoryKeys ?? []) row[k] = level(c.mandatory);
+  }
+  let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
+  for (const f of add) {
+    const id = Number(refs[f.ref]?.id);
+    if (rows.some((r) => Number(r.fieldid) === id)) { warn(`add_fields: ${f.ref} is already on this form`); continue; }
+    const row: Row = { ...shape, fieldid: id, seq: ++seq };
+    for (const k of m.mandatoryKeys ?? []) row[k] = level(f.mandatory);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/** Problems if the read-back rows don't carry the fields / mandatory levels we sent. */
+function checkFieldRows(back: unknown, sent: unknown, what: string): string[] {
+  const m = SPIKE_MAP.ticketType;
+  const got = (back as Row[]) ?? [];
+  const out: string[] = [];
+  for (const r of (sent as Row[]) ?? []) {
+    const key = Number(r.fieldid) !== 0 ? 'fieldid' : 'groupid';
+    const b = got.find((g) => Number(g[key]) === Number(r[key]) && (key === 'groupid' ? Number(g.fieldid) === 0 : true));
+    if (!b) { out.push(`${what}: ${key} ${r[key]} not on the form after saving`); continue; }
+    for (const k of m.mandatoryKeys ?? []) if (r[k] !== undefined && Number(b[k]) !== Number(r[k])) out.push(`${what}: ${key} ${r[key]} ${k} is ${b[k]}, wanted ${r[k]}`);
+  }
+  return out;
+}
+
+/** Insert new stages into a workflow payload (new copy OR an existing workflow). Local ids only (rule W1/W2). */
+function applyInserts(p: Row, inserts: InsertStep[], refs: Refs): Row {
+  const steps = p.steps as Row[];
+  const stages = p.stages as Row[];
+  const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
+  for (const ins of inserts) {
+    const after = byName(ins.after_step);
+    if (!after) throw new Error(`Workflow has no step named "${ins.after_step}"`);
+    if (byName(ins.name)) throw new Error(`Workflow already has a step named "${ins.name}"`);
+    const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
+    const newStage = Number(after.stage_number) + 1;
+
+    // Make room in the progress bar: shift later stages (and the steps on them) along by one.
+    for (const st of stages) if (Number(st.sequence) >= newStage) st.sequence = Number(st.sequence) + 1;
+    for (const s of steps) if (Number(s.stage_number) >= newStage) s.stage_number = Number(s.stage_number) + 1;
+    stages.push({ sequence: newStage, name: ins.name, edit_outcome: -1, type: 1 });
+    stages.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+
+    // Action rows copy the shape of an existing outcome action on the "after" step (ids of that row dropped).
+    const actions = (after.actions as Row[]) ?? [];
+    const { id: _id, guid: _guid, ...shape } = actions.find((a) => Number(a.action_type) === 1) ?? actions[0] ?? {};
+    const action = (via: string, from: number, to: number, seq: number): Row => ({
+      ...shape,
+      action_type: 1,
+      action_id: refs[via]?.id,
+      action_name: refs[via]?.name ?? '',
+      action_outcome: '',
+      start_step: from,
+      end_step: to,
+      seq,
+      approval_result: -1,
+      conditions: [],
+      conditions_exec: [],
+      group_restrictions: [],
+    });
+
+    // Into the new step: an extra action on the "after" step.
+    actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
+    after.actions = actions;
+
+    // The new step itself, shaped like the "after" step, with its own exit actions.
+    const { id: _sid, guid: _sguid, ...afterShape } = after;
+    const newStep: Row = { ...afterShape, name: ins.name, step_id: newStepId, stage_number: newStage, isstart: false, isend: false, islaststep: false, actions: [] };
+    steps.push(newStep);
+    newStep.actions = ins.exits.map((e, i) => {
+      const target = byName(e.to_step);
+      if (!target) throw new Error(`Workflow has no step named "${e.to_step}"`);
+      return action(e.via, newStepId, Number(target.step_id), i + 1);
+    });
+  }
+  // Designer boxes for new steps are added by Halo itself (proven 2026-10-19: designer showed Awaiting Equipment).
+  return p;
+}
+
 // ---------- plan types ----------
 
 export interface Ref {
@@ -123,7 +221,28 @@ export interface PlanStep {
   /** approval_process: approval stages in order. Each stage is ONE of these (rule P1). */
   approvers?: Approver[];
   /** update: properties to change on an existing record, as refs (e.g. { workflow: "wf" }). */
-  set?: { workflow?: string; approval?: string; department_of?: string };
+  set?: {
+    // ticket_type
+    workflow?: string;
+    approval?: string;
+    team?: string;
+    sla?: string;
+    add_groups?: string[];
+    add_fields?: { ref: string; mandatory?: boolean }[];
+    // ticket_type (its own loose fields) and field_group: change mandatory on fields already there
+    field_mandatory?: { ref: string; mandatory: boolean }[];
+    // team
+    department_of?: string;
+    // status
+    sla_action?: string;
+    // workflow: add stages to an EXISTING workflow in place (rule W3)
+    insert_steps?: InsertStep[];
+    // field: add dropdown/multi-select options, change the label
+    add_options?: string[];
+    label?: string;
+    // approval_group / team
+    add_members?: string[];
+  };
   /** team: put the team in the same department as this reused team (step ref). Rule T3. */
   department_of?: string;
   /** outcome: Font Awesome icon name for the action button (default arrow-right). Rule O3. */
@@ -165,8 +284,10 @@ export interface Translator {
   afterCreate?: (id: number) => Record<string, unknown>;
   /** Property holding the record's name, if not `name` (e.g. Outcome uses `outcome`). */
   nameKey?: string;
-  /** For action 'update': the partial payload (without id) to send. */
-  update?: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
+  /** For action 'update': the partial payload (without id) to send. `current` = the record's detail read. */
+  update?: (step: PlanStep, refs: Refs, warn: (msg: string) => void, current: Record<string, unknown>) => Record<string, unknown>;
+  /** For action 'update': check the read-back. Returns problems; without it, scalar keys are compared. */
+  verifyUpdate?: (back: Record<string, unknown>, changes: Record<string, unknown>, step: PlanStep, refs: Refs) => string[];
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -233,10 +354,29 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (step.department_of) Object.assign(p, departmentOf(step.department_of, refs, warn));
       return p;
     },
-    update: (step, refs, warn) => {
+    update: (step, refs, warn, current) => {
       const out: Record<string, unknown> = {};
       if (step.set?.department_of) Object.assign(out, departmentOf(step.set.department_of, refs, warn));
+      if (step.set?.add_members?.length) {
+        // Evidence: team-12 agents[] rows { agent_id, ... }. Existing rows sent back as they are.
+        const agents = ((current.agents as Row[]) ?? []).map((a) => ({ ...a }));
+        for (const m of step.set.add_members) {
+          const id = Number(refs[m]?.id);
+          if (agents.some((a) => Number(a.agent_id) === id)) { warn(`add_members: ${m} is already in the team`); continue; }
+          agents.push({ agent_id: id });
+        }
+        out.agents = agents;
+      }
       if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+    verifyUpdate: (back, changes) => {
+      const out: string[] = [];
+      if (changes.department_id !== undefined && Number(back.department_id) !== Number(changes.department_id)) out.push(`department is ${back.department_id}`);
+      if (changes.agents) {
+        const ids = ((back.agents as Row[]) ?? []).map((a) => Number(a.agent_id));
+        for (const a of changes.agents as Row[]) if (!ids.includes(Number(a.agent_id))) out.push(`agent ${a.agent_id} not in the team after saving`);
+      }
       return out;
     },
   },
@@ -272,6 +412,33 @@ export const translators: Record<PlanStep['object'], Translator> = {
         delete p[m.options];
       }
       return p;
+    },
+    update: (step, _refs, warn, current) => {
+      const m = SPIKE_MAP.field;
+      const st = step.set ?? {};
+      const out: Record<string, unknown> = {};
+      if (st.label && m.label) out[m.label] = st.label;
+      if (st.add_options?.length && m.options) {
+        // Existing values keep their ids; new ones go on the end as { name } (same shape as on create).
+        const values = ((current[m.options] as Row[]) ?? []).map((v) => ({ ...v }));
+        for (const name of st.add_options) {
+          if (values.some((v) => String(v.name).toLowerCase() === name.toLowerCase())) { warn(`add_options: "${name}" is already an option`); continue; }
+          values.push({ name });
+        }
+        out[m.options] = values;
+      }
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+    verifyUpdate: (back, changes) => {
+      const m = SPIKE_MAP.field;
+      const out: string[] = [];
+      if (m.label && changes[m.label] !== undefined && back[m.label] !== changes[m.label]) out.push(`label is ${JSON.stringify(back[m.label])}`);
+      if (m.options && changes[m.options]) {
+        const have = ((back[m.options] as Row[]) ?? []).map((v) => String(v.name).toLowerCase());
+        for (const v of changes[m.options] as Row[]) if (!have.includes(String(v.name).toLowerCase())) out.push(`option "${v.name}" missing after saving`);
+      }
+      return out;
     },
   },
 
@@ -369,16 +536,56 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.all_must_approve = false;
       return p;
     },
+    update: (step, refs, warn, current) => {
+      if (!step.set?.add_members?.length) { warn('update: nothing to set'); return {}; }
+      const members = ((current.members as Row[]) ?? []).map((m) => ({ ...m }));
+      for (const a of step.set.add_members) {
+        const id = Number(refs[a]?.id);
+        if (members.some((m) => Number(m.agent_id) === id)) { warn(`add_members: ${a} is already a member`); continue; }
+        members.push({ agent_id: id, type: 0 });
+      }
+      return { members };
+    },
+    verifyUpdate: (back, changes) => {
+      const ids = ((back.members as Row[]) ?? []).map((m) => Number(m.agent_id));
+      return ((changes.members as Row[]) ?? []).filter((m) => !ids.includes(Number(m.agent_id))).map((m) => `approval group: agent ${m.agent_id} not a member after saving`);
+    },
   },
 
   ticket_type: {
     resource: 'TicketType',
     template: 'template-tickettype.json',
-    update: (step, refs, warn) => {
+    update: (step, refs, warn, current) => {
+      const m = SPIKE_MAP.ticketType;
       const out: Record<string, unknown> = {};
-      if (step.set?.workflow) out.workflow_id = refs[step.set.workflow]?.id;
-      if (step.set?.approval) out.approval_process_id = refs[step.set.approval]?.id;
+      const st = step.set ?? {};
+      if (st.workflow) out.workflow_id = refs[st.workflow]?.id;
+      if (st.approval) out.approval_process_id = refs[st.approval]?.id;
+      if (st.team && m.teamName) out[m.teamName] = refs[st.team]?.name; // rule T1: team by NAME
+      if (st.sla && m.sla) out[m.sla] = refs[st.sla]?.id;
+      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length) {
+        // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
+        const rows = keepRows(current[m.fields as string]);
+        const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
+        editFieldRows(rows, refs, st.add_fields, st.field_mandatory, shape, warn);
+        let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
+        for (const g of st.add_groups ?? []) {
+          const gid = Number(refs[g]?.id);
+          if (rows.some((r) => Number(r.groupid) === gid && Number(r.fieldid) === 0)) { warn(`add_groups: ${g} is already on this form`); continue; }
+          rows.push({ fieldid: 0, groupid: gid, seq: ++seq, usage: 0, endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 });
+        }
+        out[m.fields as string] = rows;
+      }
       if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+    verifyUpdate: (back, changes) => {
+      const m = SPIKE_MAP.ticketType;
+      const out: string[] = [];
+      for (const [k, v] of Object.entries(changes)) {
+        if (k === m.fields) out.push(...checkFieldRows(back[k], v, 'form'));
+        else if (JSON.stringify(back[k]) !== JSON.stringify(v)) out.push(`${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(v)}`);
+      }
       return out;
     },
     build: (step, refs, warn) => {
@@ -449,6 +656,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
       });
       return p;
     },
+    update: (step, refs, warn, current) => {
+      const st = step.set ?? {};
+      if (!st.add_fields?.length && !st.field_mandatory?.length) { warn('update: nothing to set'); return {}; }
+      const rows = keepRows(current.fields);
+      editFieldRows(rows, refs, st.add_fields, st.field_mandatory, { usage: 1, tableid: 1, enduserdetail: 1, techdetail: 2, enduseraction: 1, techaction: 1 }, warn);
+      return { fields: rows };
+    },
+    verifyUpdate: (back, changes) => checkFieldRows(back.fields, changes.fields, 'field group'),
   },
 
   status: {
@@ -461,11 +676,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.shortname = step.name;
       if (step.sla_action !== undefined) p.slaaction = step.sla_action;
       if (step.colour) p.colour = step.colour;
-      // Rule O3 (2026-10-19): the icon comes from the template action. On gethandoveruk that was
-      // "Triage Not Required", so every new forward action showed an X. Use the plan's icon, or a neutral one.
-      // Evidence for the property: outcome-11 has icon "users" (a Font Awesome name).
-      p.icon = step.icon ?? 'arrow-right';
       return p;
+    },
+    update: (step, _refs, warn) => {
+      if (step.set?.sla_action === undefined) { warn('update: nothing to set'); return {}; }
+      return { slaaction: step.set.sla_action };
     },
   },
 
@@ -484,6 +699,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.hotkey = '';
       p.newstatus = step.new_status ? refs[step.new_status]?.id : 0;
       if (step.colour) p.colour = step.colour;
+      // Rule O3 (2026-10-19): the icon comes from the template action. On gethandoveruk that was
+      // "Triage Not Required", so every new forward action showed an X. Use the plan's icon, or a neutral one.
+      // Evidence for the property: outcome-11 has icon "users" (a Font Awesome name).
+      p.icon = step.icon ?? 'arrow-right';
       return p;
     },
   },
@@ -497,60 +716,18 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const p = fromTemplate(templateFileFor(step, workflowTemplateFile()), 'Workflow');
       p.name = step.name;
       const inserts = [...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])];
-      if (!inserts.length) return p;
-
-      type Row = Record<string, unknown>;
-      const steps = p.steps as Row[];
-      const stages = p.stages as Row[];
-      const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
-
-      for (const ins of inserts) {
-        const after = byName(ins.after_step);
-        if (!after) throw new Error(`Workflow has no step named "${ins.after_step}"`);
-
-        const newStepId = Math.max(...steps.map((s) => Number(s.step_id))) + 1;
-        const newStage = Number(after.stage_number) + 1;
-
-        // Make room in the progress bar: shift later stages (and the steps on them) along by one.
-        for (const st of stages) if (Number(st.sequence) >= newStage) st.sequence = Number(st.sequence) + 1;
-        for (const s of steps) if (Number(s.stage_number) >= newStage) s.stage_number = Number(s.stage_number) + 1;
-        stages.push({ sequence: newStage, name: ins.name, edit_outcome: -1, type: 1 });
-        stages.sort((a, b) => Number(a.sequence) - Number(b.sequence));
-
-        // Action rows copy the shape of an existing outcome action on the "after" step.
-        const actions = (after.actions as Row[]) ?? [];
-        const shape = actions.find((a) => Number(a.action_type) === 1) ?? actions[0] ?? {};
-        const action = (via: string, from: number, to: number, seq: number): Row => ({
-          ...shape,
-          action_type: 1,
-          action_id: refs[via]?.id,
-          action_name: refs[via]?.name ?? '',
-          action_outcome: '',
-          start_step: from,
-          end_step: to,
-          seq,
-          approval_result: -1,
-          conditions: [],
-          conditions_exec: [],
-          group_restrictions: [],
-        });
-
-        // Into the new step: an extra action on the "after" step.
-        actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
-        after.actions = actions;
-
-        // The new step itself, shaped like the "after" step, with its own exit actions.
-        const newStep: Row = { ...after, name: ins.name, step_id: newStepId, stage_number: newStage, isstart: false, isend: false, islaststep: false, actions: [] };
-        steps.push(newStep);
-        newStep.actions = ins.exits.map((e, i) => {
-          const target = byName(e.to_step);
-          if (!target) throw new Error(`Workflow has no step named "${e.to_step}"`);
-          return action(e.via, newStepId, Number(target.step_id), i + 1);
-        });
-      }
-
-      // Designer boxes for new steps are added by Halo itself (proven 2026-10-19: designer showed Awaiting Equipment).
-      return p;
+      return inserts.length ? applyInserts(p, inserts, refs) : p;
+    },
+    // Rule W3 (2026-10-23): add stages to an EXISTING workflow in place. Send its own steps and stages
+    // back with the new ones added; its ids stay, so tickets already on it keep their place.
+    update: (step, refs, warn, current) => {
+      if (!step.set?.insert_steps?.length) { warn('update: nothing to set'); return {}; }
+      const p = applyInserts({ steps: structuredClone(current.steps ?? []), stages: structuredClone(current.stages ?? []) }, step.set.insert_steps, refs);
+      return { steps: p.steps, stages: p.stages };
+    },
+    verifyUpdate: (back, _changes, step) => {
+      const names = ((back.steps as Row[]) ?? []).map((s) => String(s.name).toLowerCase());
+      return (step.set?.insert_steps ?? []).filter((i) => !names.includes(i.name.toLowerCase())).map((i) => `workflow: stage "${i.name}" not there after saving`);
     },
   },
 };
@@ -565,6 +742,13 @@ export function refsOf(step: PlanStep): string[] {
     step.set?.workflow,
     step.set?.approval,
     step.set?.department_of,
+    step.set?.team,
+    step.set?.sla,
+    ...(step.set?.add_groups ?? []),
+    ...(step.set?.add_fields ?? []).map((f) => f.ref),
+    ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
+    ...(step.set?.add_members ?? []),
+    ...(step.set?.insert_steps ?? []).flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     step.department_of,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
     ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
