@@ -138,6 +138,12 @@ function validate(plan: Plan): string[] {
       errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
     if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
     if (s.based_on && s.name && s.based_on.toLowerCase() === s.name.toLowerCase()) errors.push(`${where}: based_on is the thing being created; pick an existing record to copy from`);
+    // A new field whose label means the same as an existing field's label is a duplicate (CFEmergencyReason vs CFemergencyChangeReason).
+    if (s.object === 'field' && s.action === 'create' && s.label) {
+      const stem = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean).map((w) => w.replace(/(ing|ed|s)$/, '')).join(' ');
+      const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!));
+      if (hit) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
+    }
     const twin = s.action === 'create' && s.name ? (NAMES_BY_OBJECT[s.object] ?? []).find((n) => n.length >= 6 && s.name!.toLowerCase().startsWith(n.toLowerCase()) && s.name!.length > n.length) : undefined;
     if (twin) errors.push(`${where}: "${s.name}" is a copy of the existing "${twin}": update "${twin}" instead`);
     if ((plan.questions?.length ?? 0) > 4 && s === plan.steps[0]) errors.push(`${plan.questions!.length} questions: keep at most 4, and drop any that inventory.details answers`);
@@ -217,4 +223,4 @@ list('NOT SUPPORTED YET (not built):', plan.unsupported);
 list('ASSUMPTIONS (check these):', plan.assumptions);
 list('QUESTIONS:', plan.questions);
 if (errors.length) console.log(`\n⚠️ Still invalid after a retry, do not build:\n  - ${errors.join('\n  - ')}`);
-console.log(`\nSaved ${rel}\nReview it, then dry-run:  npm run build:onboarding -- --plan ${rel}\n`);
+console.log(`\nSaved ${rel}\nReview it, then dry-run:  npm run build:onboarding -- --plan latest\n`);

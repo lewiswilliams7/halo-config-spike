@@ -10,12 +10,14 @@
  * an existing one with a partial POST; then read it back to verify. Re-running is safe: anything that already exists
  * with the same name is reused, not duplicated. Stops at the first hard failure.
  */
+import { existsSync, readdirSync } from 'node:fs';
 import {
   assertWritesAllowed,
   env,
   extractList,
   firstRecord,
   haloGet,
+  spikePath,
   haloPost,
   loadJson,
   saveJson,
@@ -27,7 +29,14 @@ import { type Plan, type Refs, refsOf, translators } from './lib/translators.js'
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 const planIdx = args.indexOf('--plan');
-const planFile = planIdx >= 0 ? args[planIdx + 1] : 'plans/onboarding.json';
+let planFile = planIdx >= 0 ? args[planIdx + 1] : 'plans/onboarding.json';
+// --plan latest = the newest plan the planner saved in plans/generated/
+if (planFile === 'latest') {
+  const dir = spikePath('plans/generated');
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')).sort() : [];
+  if (!files.length) throw new Error('No generated plans yet: run npm run plan first.');
+  planFile = `plans/generated/${files.at(-1)}`;
+}
 const freshTemplates = args.includes('--fresh-templates');
 
 if (apply) assertWritesAllowed();
