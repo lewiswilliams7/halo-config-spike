@@ -1,0 +1,15 @@
+{
+  "request": "Line managers only come from AD, which this instance doesn't sync (rule P6). Replace the joiner line-manager stage with a named approver so the approval can be tested end to end, and put back New Joiner's standard fields (Details, Followers) lost at creation (rule T5).",
+  "steps": [
+    { "id": "grp_people", "object": "approval_group", "action": "reuse", "match": { "name": "People Approvers" } },
+    { "id": "ag_ken", "object": "agent", "action": "reuse", "match": { "name": "Ken Yang" } },
+    { "id": "tt_starter", "object": "ticket_type", "action": "reuse", "match": { "name": "New Starter Request" } },
+    { "id": "appr_joiner_named", "object": "approval_process", "action": "create", "name": "Joiner approval (People, then named approver)", "based_on": "Line Manager Approval Process",
+      "approvers": [{ "group": "grp_people", "min": 1 }, { "agent": "ag_ken" }] },
+    { "id": "tt_joiner", "object": "ticket_type", "action": "update", "match": { "name": "New Joiner" },
+      "set": { "approval": "appr_joiner_named", "copy_standard_fields_from": "tt_starter" } }
+  ],
+  "assumptions": [
+    "Ken Yang stands in for the line manager for testing. On a customer instance without AD manager sync, this would be a named approver or an approval group they choose."
+  ]
+}

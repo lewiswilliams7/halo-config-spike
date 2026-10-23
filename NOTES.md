@@ -120,3 +120,5 @@ As you answer the questions above, fill the nulls in `spike/lib/translators.ts` 
 - SLA IS on the ticket: sla_id 6 "Joiner - 5 working days", respond by Mon 26 Oct 13:00, fix by Mon 2 Nov 09:00 (5 working days from Monday 09:00). Raised Friday 22:35, so 0% used. SLA built correctly; identical to Service Request SLA apart from targets. Rule S9.
 - Approval: stage 1 (People Approvers) approved (admin override by lewis). Stage 2 (line manager) created no approval records; faultapprovalfailed true, status frozen. End user Ahmed Hassan's API record has no manager field. Rule P5. Next: set his manager in the UI and re-read Users/51 to find where Halo stores it.
 - Lewis confirmed in the UI: a user's line manager is an AD-only field. Rule P6; planner now asks about AD manager sync before using line-manager approval.
+- New Joiner was created without Halo's standard form fields (Details, Followers): T2 replaced the whole form. Rule T5 keeps them; joiner-approval-fix.json puts them back on New Joiner and swaps line manager for a named approver (P6).
+- SLA runs on "Default Working Hours" (Mon-Fri 09:00-17:00). To test SLA pausing out of hours, set it to 24/7 in the UI.

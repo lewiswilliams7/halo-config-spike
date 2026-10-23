@@ -84,6 +84,18 @@ function keepRows(rows: unknown): Row[] {
   });
 }
 
+/**
+ * Rule T5 (2026-10-23): a ticket type's form also carries Halo's own fields (Details = symptom2, Agent,
+ * Followers = -52, category, hidden AI fields). Replacing the whole form dropped them: New Joiner had no
+ * Details box. Keep a source form's loose rows unless they are VISIBLE custom fields (the source's own questions).
+ */
+function isStandardRow(r: Row): boolean {
+  if (Number(r.fieldid) === 0) return false; // a section row
+  const name = String((r.fieldinfo as Row)?.name ?? '');
+  const visible = ['endusernew', 'technew', 'enduserdetail', 'techdetail'].some((k) => Number(r[k]) > 0);
+  return !(name.startsWith('CF') && visible);
+}
+
 /** Add fields / change mandatory on a list of field rows (ticket type or field group). */
 /** Rough "same field" test on labels: lower-case words with simple endings removed ("Starting Date" ~ "Start date"). */
 function sameMeaning(a: string, b: string): boolean {
@@ -250,6 +262,8 @@ export interface PlanStep {
     sla?: string;
     add_groups?: string[];
     add_fields?: { ref: string; mandatory?: boolean }[];
+    /** ticket_type: add back Halo's standard fields (Details, Followers...) from this REUSED ticket type (rule T5). */
+    copy_standard_fields_from?: string;
     // ticket_type (its own loose fields) and field_group: change mandatory on fields already there
     field_mandatory?: { ref: string; mandatory: boolean }[];
     // team
@@ -584,7 +598,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (st.approval) out.approval_process_id = refs[st.approval]?.id;
       if (st.team && m.teamName) out[m.teamName] = refs[st.team]?.name; // rule T1: team by NAME
       if (st.sla && m.sla) out[m.sla] = refs[st.sla]?.id;
-      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length) {
+      if (st.add_groups?.length || st.add_fields?.length || st.field_mandatory?.length || st.copy_standard_fields_from) {
         // Rule U2 (2026-10-23): the form is one list. Send ALL existing rows back (ids kept) plus the new ones.
         const rows = keepRows(current[m.fields as string]);
         const shape: Row = { usage: 0, groupid: 0, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 };
@@ -594,6 +608,17 @@ export const translators: Record<PlanStep['object'], Translator> = {
           const gid = Number(refs[g]?.id);
           if (rows.some((r) => Number(r.groupid) === gid && Number(r.fieldid) === 0)) { warn(`add_groups: ${g} is already on this form`); continue; }
           rows.push({ fieldid: 0, groupid: gid, seq: ++seq, usage: 0, endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1 });
+        }
+        if (st.copy_standard_fields_from) {
+          // Rule T5: put back Halo's standard fields from the type this one was copied from.
+          const src = refs[st.copy_standard_fields_from]?.row;
+          if (!src) warn(`copy_standard_fields_from: ${st.copy_standard_fields_from} must be a REUSED ticket type`);
+          let n = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
+          for (const r of keepRows(((src?.[m.fields as string] as Row[]) ?? []).filter(isStandardRow))) {
+            if (rows.some((x) => Number(x.fieldid) === Number(r.fieldid))) continue;
+            const { id: _id, guid: _guid, tickettype_id: _tt, ...rest } = r;
+            rows.push({ ...rest, seq: ++n });
+          }
         }
         out[m.fields as string] = rows;
       }
@@ -629,7 +654,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (!m.fields || !m.fieldId) {
         warn(`SPIKE_MAP gap: don't know how fields attach to a ticket type yet; skipped`);
       } else {
-        // Replace the template's field rows entirely: they belong to the template's ticket type.
+        // Replace the template's own questions, but keep Halo's standard fields (rule T5).
+        const standard = keepRows(((p[m.fields] as Row[]) ?? []).filter(isStandardRow));
         p[m.fields] = (step.fields ?? []).map((f, i) => {
           const level = f.mandatory ? m.mandatoryValue : m.optionalValue;
           const row: Record<string, unknown> = {
@@ -653,6 +679,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
             endusernew: 1, technew: 1, enduserdetail: 1, techdetail: 1, enduseraction: 1, techaction: 1,
           });
         }
+        const rows = p[m.fields] as Row[];
+        for (const r of standard) if (!rows.some((x) => Number(x.fieldid) === Number(r.fieldid))) rows.push({ ...r, seq: rows.length + 1 });
       }
       return p;
     },
@@ -763,6 +791,7 @@ export function refsOf(step: PlanStep): string[] {
     step.set?.workflow,
     step.set?.approval,
     step.set?.department_of,
+    step.set?.copy_standard_fields_from,
     step.set?.team,
     step.set?.sla,
     ...(step.set?.add_groups ?? []),
