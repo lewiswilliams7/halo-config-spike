@@ -64,7 +64,9 @@ Objects and their create properties:
 Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
 RULES
-- Reuse what exists (exact names from the inventory). Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
+- Reuse what exists (exact names from the inventory), but only when it matches what the request asks for. Never create something whose name matches an existing one ignoring case (CFLaptopType vs CFlaptopType). Never invent names of existing things: anything not in the inventory must be created by an earlier step.
+- When the request describes stages a ticket moves through, build them: copy a workflow and add the stages with insert_steps.
+- based_on must name an EXISTING record, never the thing being created. Never invent agents, teams, workflows or step names that aren't in the inventory unless you create them.
 - If the request needs something not listed above (e.g. conditional field visibility, auto-assignment rules, email templates, notifications, child tickets, categories, renaming or removing existing workflow steps, rules based on field values (routing, priority, skipping approval), roles/permissions, reports), DO NOT approximate it: describe it plainly in "unsupported" and build only the supported parts.
 - Line-manager approval fails for requesters with no line manager set: if you use it, add an assumption saying so.
 - If something is ambiguous and a wrong guess would be costly, put it in "questions" and still plan the rest.
@@ -98,6 +100,9 @@ function validate(plan: Plan): string[] {
     if ((s.action === 'reuse' || s.action === 'update') && !all.has(String(s.match?.name ?? '').toLowerCase()) && !createdHere.has(`${s.object}:${String(s.match?.name ?? '').toLowerCase()}`))
       errors.push(`${where}: "${s.match?.name}" is not in the inventory`);
     if (s.based_on && !all.has(s.based_on.toLowerCase())) errors.push(`${where}: based_on "${s.based_on}" is not in the inventory`);
+    if (s.based_on && s.name && s.based_on.toLowerCase() === s.name.toLowerCase()) errors.push(`${where}: based_on is the thing being created; pick an existing record to copy from`);
+    if (s.action === 'create' && s.name && all.has(s.name.toLowerCase()))
+      errors.push(`${where}: "${s.name}" already exists (names are case-insensitive): reuse it, or pick a different name`);
     if (s.copy_of && !workflowSteps[s.copy_of]) errors.push(`${where}: copy_of "${s.copy_of}" is not an existing workflow`);
     const inserts = [...(s.insert_steps ?? []), ...(s.insert_step ? [s.insert_step] : [])];
     if (inserts.length && s.copy_of && workflowSteps[s.copy_of]) {

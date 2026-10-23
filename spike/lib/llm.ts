@@ -33,7 +33,8 @@ export async function complete(system: string, user: string): Promise<string> {
       body: JSON.stringify({
         model: model || 'gpt-4.1',
         response_format: { type: 'json_object' },
-        temperature: 0.2,
+        // Reasoning models (gpt-5, o-series) only accept the default temperature.
+        ...(/^(gpt-5|o\d)/.test(model ?? '') ? {} : { temperature: 0.2 }),
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       }),
     });
