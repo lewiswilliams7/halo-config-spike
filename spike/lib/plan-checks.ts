@@ -129,7 +129,7 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   // its options, and the rule must name who approves.
   for (const s of steps) {
     if (s.object !== 'approval_process') continue;
-    for (const a of s.approvers ?? []) {
+    for (const a of [...(s.approvers ?? []), ...(s.set?.add_stages ?? [])]) {
       if (!('rules' in a)) continue;
       if (!a.rules?.length) errors.push(`step "${s.id}": a rules stage needs at least one rule`);
       for (const r of a.rules ?? []) {
@@ -144,6 +144,21 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
         if (!options.some((o) => o.trim().toLowerCase() === r.equals.trim().toLowerCase()))
           errors.push(`step "${s.id}": "${f.label ?? fieldLabel(details) ?? f.match?.name}" has no option "${r.equals}" (it has ${options.join(', ') || 'none'})`);
       }
+    }
+  }
+
+  // M11 (2026-10-24): on a follow-up, anything dropped from the plan must be named in the reply. (A follow-up about
+  // approvals silently dropped a field, a button and a workflow change while saying "everything else is unchanged".)
+  if (ctx.previousSteps) {
+    const key = (x: PlanStep) => `${x.object}:${String(x.name ?? x.match?.name ?? '').toLowerCase()}:${x.action}`;
+    const now = new Set(steps.map(key));
+    const reply = String(plan.reply ?? '').toLowerCase();
+    for (const p of ctx.previousSteps) {
+      if (p.action === 'reuse' || now.has(key(p))) continue;
+      const shown = String(p.label ?? p.name ?? p.match?.name ?? '');
+      const label = fieldLabel(ctx.fieldDetails?.[p.match?.name ?? '']) ?? shown;
+      if (![shown, label].some((n) => n && reply.includes(n.toLowerCase())))
+        errors.push(`the follow-up drops "${label}" (${p.object}) from the plan without saying so. Keep it, or if the user asked for it to go, name it in reply.`);
     }
   }
 

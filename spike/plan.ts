@@ -85,9 +85,10 @@ UPDATES TO THINGS THAT ALREADY EXIST (action "update", "match": { "name": existi
 - workflow set: { insert_steps: [ same shape as above ] } adds stages to the EXISTING workflow in place. Use it when the request is to change that workflow; copy a workflow only when a new, separate one is wanted.
 - workflow set may also have add_actions: [{ step, via: outcome ref, to_step }] to put a button on an EXISTING stage, and retarget_actions: [{ step, via: outcome ref of a button ALREADY on that stage (inventory.details.workflow_actions_by_stage), to_step }] to send it somewhere else (W8). Use these to fix flows: a stage with no way out, or buttons that skip a stage. Removing a button is not supported: list it in unsupported.
 - status set: { sla_action: "hold" }
+- approval_process set: { add_stages: [approvers, same shapes as above] } adds stages at the END of an EXISTING process in place (P8). Use it to add a final approval (including a rules stage); other stage changes aren't supported.
 - team set: { department_of?: ref, add_members?: [agent refs] }
 - approval_group set: { add_members: [agent refs] }
-Not updatable: removing anything (including buttons on stages), renaming or removing workflow steps, changing approval process stages (create a new process instead), changing a field's type.
+Not updatable: removing anything (including buttons on stages), renaming or removing workflow steps, changing or removing existing approval stages (adding at the end is supported), changing a field's type.
 Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
 RULES

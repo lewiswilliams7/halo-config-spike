@@ -195,6 +195,16 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
           record({ outcome: 'updated', id: target.id, payload: changes, detail: describe(changes) });
           say(`~ ${label}  updated id ${target.id}${bad.length ? '' : ', verified'}`);
         }
+        // Records hanging off an updated record (e.g. rules for an added approval stage, P7/P8). Idempotent.
+        if (apply && t.related) {
+          const now = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+          for (const r of await t.related(now, step, refs)) {
+            const made = firstRecord(await halo.post(`/${r.resource}`, [r.payload]));
+            const rb = made?.id ? firstRecord(await halo.get(`/${r.resource}/${made.id}`, { includedetails: 'true' })) : null;
+            if (!rb?.id) warn(`${r.label}: not there after saving`);
+            else say(`      + ${r.label} (id ${rb.id}), verified`);
+          }
+        } else if (!apply && t.relatedPreview) for (const x of t.relatedPreview(step, refs)) say(`      + ${x}`);
         for (const w of warnings) say(`    ! ${w}`);
         continue;
       }

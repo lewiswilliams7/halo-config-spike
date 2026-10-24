@@ -10,7 +10,7 @@
  * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
 import { cleanForCreate } from './clean.js';
-import { firstRecord, runtime } from './runtime.js';
+import { extractList, firstRecord, runtime } from './runtime.js';
 
 export const SPIKE_MAP = {
   /** FieldInfo.type. Evidence: fieldinfo-141 (text=0), -114 (memo=1), -124 (dropdown=2),
@@ -211,6 +211,39 @@ function applyButtons(p: Row, add: ButtonChange[], retarget: ButtonChange[], ref
   return changed;
 }
 
+/** A readable, stable name for an approval stage: shown in Halo, and how re-runs recognise a stage already added (U4). */
+export function stageName(a: Approver, refs: Refs): string {
+  const who = (ref?: string) => refs[ref ?? '']?.name ?? ref ?? '';
+  if ('rules' in a) return `Rules: ${a.rules.map((r) => `${refs[r.field]?.row?.label ?? who(r.field)} is ${r.equals}`).join(', ')}`.slice(0, 100);
+  if ('line_manager' in a) return 'Line manager';
+  if ('adhoc' in a) return 'Chosen by the agent';
+  if ('agent' in a) return `Approval: ${who(a.agent)}`.slice(0, 100);
+  return `Approval: ${who(a.group)}`.slice(0, 100);
+}
+
+/** One approval stage row, shaped like an existing one (rule P3: display labels never copied). */
+function stageRow(shape: Row, a: Approver, refs: Refs, sequence: number): Row {
+  const m = SPIKE_MAP.approval;
+  const { id: _id, guid: _guid, processid: _p, ...rest } = shape;
+  const row: Row = { ...rest, sequence, name: stageName(a, refs), agent_name: '', cab_name: '' };
+  if ('line_manager' in a) row.type = m.lineManagerStepType;
+  else if ('adhoc' in a) row.type = m.adhocStepType;
+  else if ('rules' in a) {
+    // Rule P7: approvers come from rules; when no rule matches the ticket, the stage approves itself.
+    row.type = m.rulesStepType;
+    row[m.approverIdKey] = 0;
+    row.autoapproveifnoapprovers = true;
+  } else if ('agent' in a) {
+    row.type = m.agentStepType;
+    row[m.approverIdKey] = refs[a.agent]?.id;
+  } else if ('group' in a) {
+    row.type = m.groupStepType;
+    row[m.approverIdKey] = refs[a.group]?.id;
+    row[m.minApproversKey] = a.min ?? 1;
+  }
+  return row;
+}
+
 /** Buttons that resolve, close or cancel a ticket (Halo system actions): never rerouted into a new stage (rule W5). */
 export const CLOSING_ACTION = /resolv|close|cancel|complete|reject/i;
 /** Halo actions that don't move a ticket on (they open a dialog): never a way out of a stage (rule W6). */
@@ -351,6 +384,8 @@ export interface PlanStep {
     sla_action?: string;
     // workflow: add stages to an EXISTING workflow in place (rule W3)
     insert_steps?: InsertStep[];
+    /** approval_process: stages added at the end of an existing process (rule P8). */
+    add_stages?: Approver[];
     /** workflow: put a button on an EXISTING stage (rule W8). */
     add_actions?: ButtonChange[];
     /** workflow: send a button already on a stage somewhere else (rule W8). */
@@ -629,29 +664,34 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule P7 (2026-10-24): a rules stage needs one ApprovalProcessRule per condition, pointing at the process and
     // the stage by id. Evidence: approvalprocessrule-5/6 (criteria type 23 on a dropdown, value_string = option id).
     relatedPreview: (step, refs) =>
-      (step.approvers ?? []).flatMap((a) => ('rules' in a ? a.rules : [])).map((r) => `rule: if ${refs[r.field]?.name ?? r.field} is "${r.equals}", ${refs[r.group ?? r.agent ?? '']?.name ?? r.group ?? r.agent} approves`),
-    related: async (created, step, refs) => {
+      [...(step.approvers ?? []), ...(step.set?.add_stages ?? [])].flatMap((a) => ('rules' in a ? a.rules : [])).map((r) => `rule: if ${refs[r.field]?.row?.label ?? refs[r.field]?.name ?? r.field} is "${r.equals}", ${refs[r.group ?? r.agent ?? '']?.name ?? r.group ?? r.agent} approves`),
+    related: async (record, step, refs) => {
       const out: { resource: string; payload: Record<string, unknown>; label: string }[] = [];
-      const stages = [...((created.steps as Row[]) ?? [])].sort((a, b) => Number(a.sequence) - Number(b.sequence));
-      for (const [i, a] of (step.approvers ?? []).entries()) {
+      const stages = [...((record.steps as Row[]) ?? [])].sort((a, b) => Number(a.sequence) - Number(b.sequence));
+      const wanted = step.action === 'update' ? step.set?.add_stages ?? [] : step.approvers ?? [];
+      // Rules already on this process (a re-run, or a stage added earlier): never create them twice (U4).
+      const existing = extractList(await runtime().halo.get('/ApprovalProcessRule')).filter((r) => Number(r.approval_process_id) === Number(record.id)).map((r) => String(r.name));
+      for (const [i, a] of wanted.entries()) {
         if (!('rules' in a)) continue;
-        const stage = stages[i];
-        if (!stage?.id) throw new Error(`Approval "${step.name}": Halo didn't return stage ${i + 1}, so its rules can't be attached`);
+        const stage = stages.find((s) => String(s.name) === stageName(a, refs)) ?? (step.action === 'create' ? stages[i] : undefined);
+        if (!stage?.id) throw new Error(`Approval "${step.name ?? step.match?.name}": the rules stage isn't there after saving, so its rules can't be attached`);
         for (const r of a.rules) {
           const field = refs[r.field];
           const info = firstRecord(await runtime().halo.get(`/FieldInfo/${field?.id}`, { includedetails: 'true' })) ?? {};
           const option = ((info.values as Row[]) ?? []).find((v) => String(v.name).trim().toLowerCase() === r.equals.trim().toLowerCase());
           if (!option) throw new Error(`Approval rule: "${info.label ?? field?.name}" has no option "${r.equals}"`);
           const who = refs[r.group ?? r.agent ?? ''];
+          const name = `${step.name ?? step.match?.name}: ${info.label ?? field?.name} is ${r.equals}`.slice(0, 100);
+          if (existing.includes(name)) continue;
           out.push({
             resource: 'ApprovalProcessRule',
             label: `rule: if ${info.label ?? field?.name} is "${r.equals}", ${who?.name} approves`,
             payload: {
-              name: `${step.name}: ${info.label ?? field?.name} is ${r.equals}`.slice(0, 100),
+              name,
               precedence: 50,
               type: r.group ? SPIKE_MAP.approval.groupStepType : SPIKE_MAP.approval.agentStepType,
               agent_id_or_cab_id: who?.id,
-              approval_process_id: created.id,
+              approval_process_id: record.id,
               approval_process_step_id: stage.id,
               usage: 0,
               notifyonapprove: true,
@@ -662,6 +702,27 @@ export const translators: Record<PlanStep['object'], Translator> = {
         }
       }
       return out;
+    },
+    // Rule P8 (2026-10-24): add stages to the END of an existing approval process in place. Its own stages go back as
+    // they are (ids kept, as U2); new ones are recognised by name on a re-run (U4).
+    update: (step, refs, warn, current) => {
+      const add = step.set?.add_stages ?? [];
+      if (!add.length) { warn('update: nothing to set'); return {}; }
+      const rows = ((current.steps as Row[]) ?? []).map((r) => ({ ...r }));
+      if (!rows.length) { warn('Approval process has no stages to copy the shape from; nothing added'); return {}; }
+      let seq = Math.max(0, ...rows.map((r) => Number(r.sequence) || 0));
+      let changed = false;
+      for (const a of add) {
+        if (rows.some((r) => String(r.name) === stageName(a, refs))) continue;
+        seq += 10;
+        rows.push(stageRow(rows[0], a, refs, seq));
+        changed = true;
+      }
+      return changed ? { steps: rows } : {};
+    },
+    verifyUpdate: (back, _changes, step, refs) => {
+      const names = ((back.steps as Row[]) ?? []).map((r) => String(r.name));
+      return (step.set?.add_stages ?? []).filter((a) => !names.includes(stageName(a, refs))).map((a) => `approval: stage "${stageName(a, refs)}" not there after saving`);
     },
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-approvalprocess.json'), 'ApprovalProcess');
@@ -677,27 +738,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         return p;
       }
       const shape = steps[0];
-      p[m.steps as string] = approvers.map((a, i) => {
-        // Rule P3: agent_name/cab_name are display labels Halo fills from the id; never copy them.
-        const row: Record<string, unknown> = { ...shape, sequence: i + 1, name: '', agent_name: '', cab_name: '' };
-        if ('line_manager' in a) row.type = m.lineManagerStepType;
-        else if ('adhoc' in a) row.type = m.adhocStepType;
-        else if ('rules' in a) {
-          // Rule P7: approvers come from rules; when no rule matches the ticket, the stage approves itself.
-          row.type = m.rulesStepType;
-          row[m.approverIdKey] = 0;
-          row.autoapproveifnoapprovers = true;
-        }
-        else if ('agent' in a) {
-          row.type = m.agentStepType;
-          row[m.approverIdKey] = refs[a.agent]?.id;
-        } else if ('group' in a) {
-          row.type = m.groupStepType;
-          row[m.approverIdKey] = refs[a.group]?.id;
-          row[m.minApproversKey] = a.min ?? 1;
-        }
-        return row;
-      });
+      p[m.steps as string] = approvers.map((a, i) => stageRow(shape, a, refs, i + 1));
       return p;
     },
   },
@@ -984,6 +1025,7 @@ export function refsOf(step: PlanStep): string[] {
     step.department_of,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
     ...(step.approvers ?? []).flatMap((a) => ('rules' in a ? a.rules.flatMap((r) => [r.field, r.group, r.agent]) : [])),
+    ...(step.set?.add_stages ?? []).flatMap((a) => ('agent' in a ? [a.agent] : 'group' in a ? [a.group] : 'rules' in a ? a.rules.flatMap((r) => [r.field, r.group, r.agent]) : [])),
     ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     ...(step.fields ?? []).map((f) => f.ref),
     ...(step.members ?? []),
