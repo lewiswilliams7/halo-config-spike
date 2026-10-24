@@ -9,7 +9,8 @@
  * warn about things a plan would trip over (e.g. users without a line manager, rule P4).
  */
 import { ensureTemplates } from './lib/discover.js';
-import { INSTANCE_KEY, extractList, haloGet } from './lib/halo.js';
+import { INSTANCE_KEY, envHalo, extractList, fileTemplates, haloGet } from './lib/halo.js';
+import { withRuntime } from './lib/runtime.js';
 import type { PlanStep } from './lib/translators.js';
 
 const fresh = process.argv.includes('--fresh');
@@ -66,7 +67,7 @@ const every: PlanStep[] = [
 console.log(`\nTemplates from this instance${fresh ? ' (fresh)' : ''}:`);
 for (const need of every) {
   try {
-    console.log((await ensureTemplates([need], { fresh })).join('\n'));
+    console.log((await withRuntime({ halo: envHalo, templates: fileTemplates }, () => ensureTemplates([need], { fresh }))).join('\n'));
   } catch (err) {
     console.log(`  ${need.type ?? need.object}: ❌ ${err instanceof Error ? err.message : err}`);
   }

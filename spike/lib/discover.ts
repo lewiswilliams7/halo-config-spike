@@ -3,7 +3,7 @@
  * kind the plan needs, so payloads always start from this customer's own shapes.
  *
  * No hand-copied fixtures, no templates from another instance. Results are cached
- * per instance under fixtures/templates/<host>/ (see halo.ts templateRel).
+ * per instance by the caller's template store (the spike: files per host; the app: memory, per build).
  *
  * Every pick is read-only (GETs). Selection rules come from the spike's evidence:
  *   - fields: same type as requested, a real custom field (F3); dropdowns need values
@@ -13,7 +13,7 @@
  *   - approval processes: prefer a plain one (types 1/3/10), not a change CAB (type 42)
  *   - workflows: the exact one the plan says to copy (copy_of), by name
  */
-import { extractList, fileExists, firstRecord, haloGet, saveJson, templateRel } from './halo.js';
+import { extractList, firstRecord, runtime } from './runtime.js';
 import { type PlanStep, SPIKE_MAP, fieldTemplateFile, namedTemplate, templateFileFor, workflowTemplateFile } from './translators.js';
 
 type Row = Record<string, unknown>;
@@ -30,13 +30,13 @@ interface Need {
   maxDetails?: number;
 }
 
-const lists = new Map<string, Row[]>();
 async function list(resource: string): Promise<Row[]> {
-  if (!lists.has(resource)) lists.set(resource, extractList(await haloGet(`/${resource}`)));
+  const { lists, halo } = runtime(); // cached for this build only
+  if (!lists.has(resource)) lists.set(resource, extractList(await halo.get(`/${resource}`)));
   return lists.get(resource)!;
 }
 async function detail(resource: string, id: unknown): Promise<Row | null> {
-  return firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' }));
+  return firstRecord(await runtime().halo.get(`/${resource}/${id}`, { includedetails: 'true' }));
 }
 const nameOf = (r: Row) => String(r.name ?? r.buttonname ?? r.outcome ?? '');
 
@@ -140,8 +140,8 @@ const RESOURCE_OF: Record<PlanStep['object'], string> = {
 export async function ensureTemplates(steps: PlanStep[], opts: { fresh?: boolean } = {}): Promise<string[]> {
   const report: string[] = [];
   for (const need of needsFor(steps)) {
-    const rel = templateRel(need.file);
-    if (!opts.fresh && !need.force && fileExists(rel)) {
+    const { templates } = runtime();
+    if (!opts.fresh && !need.force && templates.has(need.file)) {
       report.push(`  ${need.why.padEnd(28)} cached`);
       continue;
     }
@@ -167,7 +167,7 @@ export async function ensureTemplates(steps: PlanStep[], opts: { fresh?: boolean
     }
 
     if (!picked) throw new Error(`Discovery: couldn't find a usable ${need.why} on this instance to copy the shape from.`);
-    saveJson(rel, picked);
+    templates.set(need.file, picked);
     report.push(`  ${need.why.padEnd(28)} ← ${need.resource} ${picked.id} "${nameOf(picked)}"`);
   }
   return report;

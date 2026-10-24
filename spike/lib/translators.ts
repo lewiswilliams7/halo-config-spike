@@ -10,7 +10,7 @@
  * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
 import { cleanForCreate } from './clean.js';
-import { fileExists, loadJson, templateRel } from './halo.js';
+import { runtime } from './runtime.js';
 
 export const SPIKE_MAP = {
   /** FieldInfo.type. Evidence: fieldinfo-141 (text=0), -114 (memo=1), -124 (dropdown=2),
@@ -344,12 +344,10 @@ export interface Translator {
 // ---------- helpers ----------
 
 function fromTemplate(file: string, resource: string): Record<string, unknown> {
-  // Templates come from the connected instance itself (lib/discover.ts), stored per instance.
-  const rel = templateRel(file);
-  if (!fileExists(rel)) {
-    throw new Error(`No ${resource} template for this instance (${rel}). Discovery should have found one; run npm run scan.`);
-  }
-  return cleanForCreate(loadJson<Record<string, unknown>>(rel));
+  // Templates come from the connected instance itself (lib/discover.ts), per instance and per run.
+  const record = runtime().templates.get(file);
+  if (!record) throw new Error(`No ${resource} template for this instance (${file}). Discovery should have found one.`);
+  return cleanForCreate(record);
 }
 
 /** Template file for a field of a given plan type ("text", "dropdown", ...). */

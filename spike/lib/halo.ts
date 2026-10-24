@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { HaloIO, Row, TemplateStore } from './runtime.js';
 
 /** Folder that holds spike/, so paths work wherever you run the scripts from. */
 export const SPIKE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -164,3 +165,15 @@ export function fileExists(relPath: string): boolean {
 export function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
+
+// ---------- the spike's build runtime (lib/runtime.ts) ----------
+
+/** The .env instance, for builds. Writes still go through haloPost and its safety switches. */
+export const envHalo: HaloIO = { get: haloGet, post: haloPost };
+
+/** Templates cached as files per instance (fixtures/templates/<host>/). */
+export const fileTemplates: TemplateStore = {
+  has: (f) => fileExists(templateRel(f)),
+  get: (f) => (fileExists(templateRel(f)) ? loadJson<Row>(templateRel(f)) : undefined),
+  set: (f, r) => void saveJson(templateRel(f), r),
+};
