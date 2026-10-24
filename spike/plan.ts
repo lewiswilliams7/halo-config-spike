@@ -105,6 +105,8 @@ RULES
 - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
 - SLA targets: use only priority names that appear in inventory.details.sla_targets.
 - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
+- The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
+- A rule on a number (cost over £300, more than 10 users) can't use a number field yet: capture it as a dropdown of bands ("Under £300", "£300 or more") so the rule has something to test, and put the rule itself in unsupported until conditional approvals are supported.
 - Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
 - Be concise in names. Output JSON only.
 

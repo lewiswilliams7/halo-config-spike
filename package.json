@@ -22,7 +22,8 @@
     "inventory": "tsx spike/inventory.ts",
     "diagnose": "tsx spike/diagnose.ts",
     "try-post": "tsx spike/try-post.ts",
-    "bisect-tt": "tsx spike/bisect-tt.ts"
+    "bisect-tt": "tsx spike/bisect-tt.ts",
+    "capture": "tsx spike/capture.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"

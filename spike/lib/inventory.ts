@@ -48,6 +48,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
   const get = async (resource: string, id: unknown) => firstRecord(await haloGet(`/${resource}/${id}`, { includedetails: 'true' })) ?? {};
 
   let teamsList: Row[] = [];
+  let agentRows: Row[] = [];
   let outcomesList: Row[] = [];
   const ticketTypes = await list('TicketType');
   const fields = await list('FieldInfo', (r) => Number(r.id) > 0 && nameOf(r).startsWith('CF'));
@@ -89,7 +90,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
     approval_processes: approvalProcesses.map(nameOf),
     approval_groups: cabs.map(nameOf),
     teams: (teamsList = await list('Team')).map(nameOf),
-    agents: (await list('Agent', (r) => Number(r.id) > 1)).map(nameOf),
+    agents: (agentRows = await list('Agent', (r) => Number(r.id) > 1)).map(nameOf),
     categories: (await list('Category')).map(nameOf),
   };
   if (!detail) return { ...inventory, details: undefined };
@@ -174,6 +175,8 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
       statuses_that_pause_sla,
       teams_department_and_members: teams,
       workflow_actions_by_stage: workflow_actions,
+      // So "me" in a request can be matched to the signed-in person's agent (list rows carry email).
+      agent_emails: Object.fromEntries(agentRows.map((a) => [nameOf(a), String(a.email ?? a.emailaddress ?? '')]).filter(([, e]) => e)),
       actions_that_set_status,
       approval_groups,
       approval_processes,
