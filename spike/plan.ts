@@ -83,10 +83,11 @@ UPDATES TO THINGS THAT ALREADY EXIST (action "update", "match": { "name": existi
 - field_group set: { add_fields?: [{ref, mandatory?}], field_mandatory?: [{ref, mandatory}] }
 - field set: { add_options?: string[], label?: string } (add missing dropdown/multi-select options; existing options stay)
 - workflow set: { insert_steps: [ same shape as above ] } adds stages to the EXISTING workflow in place. Use it when the request is to change that workflow; copy a workflow only when a new, separate one is wanted.
+- workflow set may also have add_actions: [{ step, via: outcome ref, to_step }] to put a button on an EXISTING stage, and retarget_actions: [{ step, via: outcome ref of a button ALREADY on that stage (inventory.details.workflow_actions_by_stage), to_step }] to send it somewhere else (W8). Use these to fix flows: a stage with no way out, or buttons that skip a stage. Removing a button is not supported: list it in unsupported.
 - status set: { sla_action: "hold" }
 - team set: { department_of?: ref, add_members?: [agent refs] }
 - approval_group set: { add_members: [agent refs] }
-Not updatable: removing anything, renaming or removing workflow steps, changing approval process stages (create a new process instead), changing a field's type.
+Not updatable: removing anything (including buttons on stages), renaming or removing workflow steps, changing approval process stages (create a new process instead), changing a field's type.
 Refs are step ids and must be defined by an EARLIER step (reuse or create).
 
 RULES
@@ -176,6 +177,19 @@ function validate(plan: Plan): string[] {
         stepsOf.push(ins.name.toLowerCase()); // an exit may stay on the new step itself (e.g. Equipment Ordered)
         for (const n of ins.exits.map((e) => e.to_step))
           if (!stepsOf.includes(String(n).toLowerCase())) errors.push(`${where}: "${n}" is not a step of "${baseWf}" (or an earlier inserted step)`);
+      }
+    }
+    // Rule W8: buttons on existing stages. The stages must exist; a re-pointed button must already be on its stage.
+    const buttonWf = s.object === 'workflow' ? (s.copy_of ?? s.match?.name) : undefined;
+    if (buttonWf && workflowSteps[buttonWf]) {
+      const stagesOf = [...workflowSteps[buttonWf], ...inserts.map((i) => i.name)].map((n) => n.toLowerCase());
+      for (const c of [...(s.set?.add_actions ?? []), ...(s.set?.retarget_actions ?? [])])
+        for (const n of [c.step, c.to_step]) if (!stagesOf.includes(String(n).toLowerCase())) errors.push(`${where}: "${n}" is not a stage of "${buttonWf}"`);
+      for (const c of s.set?.retarget_actions ?? []) {
+        const on = (wfActions[buttonWf]?.[c.step] ?? []).map((a: string) => a.split(' → ')[0].toLowerCase());
+        const via = plan.steps.find((x) => x.id === c.via);
+        const viaName = String(via?.name ?? via?.match?.name ?? '').toLowerCase();
+        if (on.length && viaName && !on.includes(viaName)) errors.push(`${where}: "${via?.name ?? via?.match?.name}" isn't a button on "${c.step}" (it has ${on.join(', ')}); use add_actions to add it`);
       }
     }
     for (const r of refsOf(s)) if (!seen.has(r)) errors.push(`${where}: uses "${r}" before it is defined`);

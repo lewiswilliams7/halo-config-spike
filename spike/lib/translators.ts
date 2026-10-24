@@ -160,6 +160,55 @@ function checkFieldRows(back: unknown, sent: unknown, what: string): string[] {
   return out;
 }
 
+/**
+ * Rule W8 (2026-10-24): change the buttons on EXISTING stages. Add puts a new button on a stage; retarget sends a
+ * button already on the stage somewhere else. Local step ids only (W1/W2). Re-runs change nothing (U4).
+ * Removing a button is not supported. Returns whether anything changed.
+ */
+function applyButtons(p: Row, add: ButtonChange[], retarget: ButtonChange[], refs: Refs): boolean {
+  const steps = p.steps as Row[];
+  const byName = (n: string) => steps.find((s) => String(s.name).toLowerCase() === n.toLowerCase());
+  const need = (n: string) => { const s = byName(n); if (!s) throw new Error(`Workflow has no stage named "${n}"`); return s; };
+  let changed = false;
+  for (const c of retarget) {
+    const from = need(c.step);
+    const to = need(c.to_step);
+    const row = ((from.actions as Row[]) ?? []).find((a) => Number(a.action_id) === Number(refs[c.via]?.id));
+    if (!row) throw new Error(`"${refs[c.via]?.name}" isn't a button on "${c.step}", so it can't be re-pointed. Add it instead.`);
+    if (Number(row.end_step) === Number(to.step_id)) continue;
+    row.end_step = to.step_id;
+    changed = true;
+  }
+  for (const c of add) {
+    const from = need(c.step);
+    const to = need(c.to_step);
+    const actions = (from.actions as Row[]) ?? [];
+    const there = actions.find((a) => Number(a.action_id) === Number(refs[c.via]?.id));
+    if (there && Number(there.end_step) === Number(to.step_id)) continue; // already as wanted (re-run)
+    if (there) throw new Error(`"${refs[c.via]?.name}" is already a button on "${c.step}" (to another stage); re-point it instead (W4)`);
+    // Shape: an existing plain action on this stage, or on any stage.
+    const sample = actions.find((a) => Number(a.action_type) === 1) ?? steps.flatMap((s) => (s.actions as Row[]) ?? []).find((a) => Number(a.action_type) === 1) ?? {};
+    const { id: _id, guid: _guid, ...shape } = sample;
+    actions.push({
+      ...shape,
+      action_type: 1,
+      action_id: refs[c.via]?.id,
+      action_name: refs[c.via]?.name ?? '',
+      action_outcome: '',
+      start_step: from.step_id,
+      end_step: to.step_id,
+      seq: actions.length + 1,
+      approval_result: -1,
+      conditions: [],
+      conditions_exec: [],
+      group_restrictions: [],
+    });
+    from.actions = actions;
+    changed = true;
+  }
+  return changed;
+}
+
 /** Buttons that resolve, close or cancel a ticket (Halo system actions): never rerouted into a new stage (rule W5). */
 export const CLOSING_ACTION = /resolv|close|cancel|complete|reject/i;
 /** Halo actions that don't move a ticket on (they open a dialog): never a way out of a stage (rule W6). */
@@ -300,6 +349,10 @@ export interface PlanStep {
     sla_action?: string;
     // workflow: add stages to an EXISTING workflow in place (rule W3)
     insert_steps?: InsertStep[];
+    /** workflow: put a button on an EXISTING stage (rule W8). */
+    add_actions?: ButtonChange[];
+    /** workflow: send a button already on a stage somewhere else (rule W8). */
+    retarget_actions?: ButtonChange[];
     // field: add dropdown/multi-select options, change the label
     add_options?: string[];
     label?: string;
@@ -310,6 +363,13 @@ export interface PlanStep {
   department_of?: string;
   /** outcome: Font Awesome icon name for the action button (default arrow-right). Rule O3. */
   icon?: string;
+}
+
+/** A button on a workflow stage: on `step`, the action `via` (outcome ref) moves the ticket to `to_step`. */
+export interface ButtonChange {
+  step: string;
+  via: string;
+  to_step: string;
 }
 
 export interface InsertStep {
@@ -818,17 +878,28 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule W3 (2026-10-23): add stages to an EXISTING workflow in place. Send its own steps and stages
     // back with the new ones added; its ids stay, so tickets already on it keep their place.
     update: (step, refs, warn, current) => {
-      if (!step.set?.insert_steps?.length) { warn('update: nothing to set'); return {}; }
+      const st = step.set ?? {};
+      if (!st.insert_steps?.length && !st.add_actions?.length && !st.retarget_actions?.length) { warn('update: nothing to set'); return {}; }
+      let p: Row = { steps: structuredClone(current.steps ?? []), stages: structuredClone(current.stages ?? []) };
+      let changed = false;
       // A re-run finds its stages already there: skip those (rule U4), add the rest.
       const have = new Set(((current.steps as Row[]) ?? []).map((x) => String(x.name).toLowerCase()));
-      const todo = step.set.insert_steps.filter((i) => !have.has(i.name.toLowerCase()));
-      if (!todo.length) return {};
-      const p = applyInserts({ steps: structuredClone(current.steps ?? []), stages: structuredClone(current.stages ?? []) }, todo, refs);
-      return { steps: p.steps, stages: p.stages };
+      const todo = (st.insert_steps ?? []).filter((i) => !have.has(i.name.toLowerCase()));
+      if (todo.length) { p = applyInserts(p, todo, refs); changed = true; }
+      if (st.add_actions?.length || st.retarget_actions?.length) changed = applyButtons(p, st.add_actions ?? [], st.retarget_actions ?? [], refs) || changed;
+      return changed ? { steps: p.steps, stages: p.stages } : {};
     },
-    verifyUpdate: (back, _changes, step) => {
-      const names = ((back.steps as Row[]) ?? []).map((s) => String(s.name).toLowerCase());
-      return (step.set?.insert_steps ?? []).filter((i) => !names.includes(i.name.toLowerCase())).map((i) => `workflow: stage "${i.name}" not there after saving`);
+    verifyUpdate: (back, _changes, step, refs) => {
+      const steps = (back.steps as Row[]) ?? [];
+      const names = steps.map((s) => String(s.name).toLowerCase());
+      const out = (step.set?.insert_steps ?? []).filter((i) => !names.includes(i.name.toLowerCase())).map((i) => `workflow: stage "${i.name}" not there after saving`);
+      for (const c of [...(step.set?.add_actions ?? []), ...(step.set?.retarget_actions ?? [])]) {
+        const from = steps.find((s) => String(s.name).toLowerCase() === c.step.toLowerCase());
+        const to = steps.find((s) => String(s.name).toLowerCase() === c.to_step.toLowerCase());
+        const ok = ((from?.actions as Row[]) ?? []).some((a) => Number(a.action_id) === Number(refs[c.via]?.id) && Number(a.end_step) === Number(to?.step_id));
+        if (!ok) out.push(`workflow: "${refs[c.via]?.name}" on "${c.step}" doesn't lead to "${c.to_step}" after saving`);
+      }
+      return out;
     },
   },
 };
@@ -851,6 +922,7 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.set?.field_mandatory ?? []).map((f) => f.ref),
     ...(step.set?.add_members ?? []),
     ...(step.set?.insert_steps ?? []).flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
+    ...[...(step.set?.add_actions ?? []), ...(step.set?.retarget_actions ?? [])].map((c) => c.via),
     step.department_of,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
     ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),

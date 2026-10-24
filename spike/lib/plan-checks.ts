@@ -119,6 +119,10 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
         if (NON_MOVING_ACTION.test(via)) errors.push(`step "${s.id}": "${ins.name}" exits via "${via}", which doesn't move a ticket on (it opens a dialog). Use a plain action, e.g. a new one named for what happens next.`);
       }
     }
+    for (const c of s.set?.add_actions ?? []) {
+      const via = nameOf(c.via);
+      if (NON_MOVING_ACTION.test(via)) errors.push(`step "${s.id}": the new button "${via}" on "${c.step}" doesn't move a ticket on (it opens a dialog). Use a plain or closing action.`);
+    }
   }
 
   // M7: questions must be worth asking.
