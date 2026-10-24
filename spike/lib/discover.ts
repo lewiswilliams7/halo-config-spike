@@ -121,6 +121,22 @@ export function needsFor(steps: PlanStep[]): Need[] {
       case 'field_group':
         add({ file: 'template-fieldgroup.json', resource: 'FieldGroup', why: 'field group', accept: (d) => Array.isArray(d.fields) });
         break;
+      // Areas behind rule B2: shapes come from the instance's own records, like everything else.
+      case 'email_template':
+        add({
+          file: 'template-emailtemplate.json', resource: 'EmailTemplate', why: 'email template',
+          accept: (d) => d[SPIKE_MAP.emailTemplate.body ?? 'body_html'] !== undefined,
+          // A ticket email, not an invoice/quote/report one.
+          prefer: (d) => !/invoice|quote|order|report|contract|survey|password|welcome/i.test(nameOf(d)),
+          maxDetails: 20,
+        });
+        break;
+      case 'ticket_rule':
+        add({ file: 'template-ticketrule.json', resource: 'TicketRules', why: 'ticket rule', accept: (d) => Array.isArray(d[SPIKE_MAP.ticketRule.criteria ?? 'criteria']) });
+        break;
+      case 'ticket_template':
+        add({ file: 'template-template.json', resource: 'Template', why: 'ticket template', accept: () => true });
+        break;
     }
   }
   // Plans can name the record to copy (based_on / copy_of): that always wins (rule D3).
@@ -135,7 +151,7 @@ export function needsFor(steps: PlanStep[]): Need[] {
 const RESOURCE_OF: Record<PlanStep['object'], string> = {
   field: 'FieldInfo', ticket_type: 'TicketType', sla: 'SLA', approval_process: 'ApprovalProcess', status: 'Status',
   outcome: 'Outcome', workflow: 'Workflow', team: 'Team', approval_group: 'CAB', field_group: 'FieldGroup',
-  agent: 'Agent',
+  agent: 'Agent', email_template: 'EmailTemplate', ticket_rule: 'TicketRules', ticket_template: 'Template',
 };
 
 /** Make sure every template the plan needs exists for this instance. Returns lines describing what was picked. */

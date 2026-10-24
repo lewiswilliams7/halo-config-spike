@@ -2,7 +2,7 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the app's lib/specflow/plan-checks.ts (only the import line differs).
  */
-import { NON_MOVING_ACTION, refsOf, type Plan, type PlanStep } from './translators.js';
+import { NON_MOVING_ACTION, featureReady, featuresOf, refsOf, type Plan, type PlanStep } from './translators.js';
 
 export type CheckContext = {
   /** Custom field name to its inventory details: '"Label" dropdown: a | b'. */
@@ -76,6 +76,12 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     const s = steps.find((x) => x.id === ref);
     return s?.name ?? s?.match?.name ?? ref ?? '';
   };
+
+  // B2 (2026-10-24): areas still being mapped can't be in a plan, however sure the planner is.
+  for (const s of steps) {
+    for (const f of featuresOf(s).filter((x) => !featureReady(x)))
+      errors.push(`step "${s.id}" uses ${f.name}, which the builder can't do yet. Remove it and describe it in unsupported.`);
+  }
 
   // M5: a threshold is its own two-option field; never fold it into another field's options.
   for (const s of steps) {

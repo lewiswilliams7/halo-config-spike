@@ -65,7 +65,119 @@ export const SPIKE_MAP = {
     mandatoryValue: 3,
     optionalValue: 1,
   },
+
+  // ---- Areas being mapped (24 Oct). Each null is an unknown: the area stays switched off (rule B2) until a capture
+  // (npm run capture:next) fills it. Keys below that are NOT null come from the probe of 24 Oct (list rows' keys).
+
+  /** Email templates. Evidence: probe, EmailTemplate rows carry header_text (subject) and body_html. */
+  emailTemplate: {
+    subject: 'header_text' as string | null,
+    body: 'body_html' as string | null,
+    /** Property holding the template's name (list rows showed names, the key wasn't recorded). */
+    name: null as string | null,
+  },
+  /** An action button that sends an email. Evidence: probe, Outcome has sendemail and emailtemplate_id. */
+  actionEmail: {
+    send: 'sendemail' as string | null,
+    template: 'emailtemplate_id' as string | null,
+    /** Who the email goes to (requester, agent, ...): not captured. */
+    recipient: null as string | null,
+    recipientRequester: null as number | string | null,
+  },
+  /** Ticket rules (routing, priority on matching tickets). Evidence: probe, TicketRules rows have criteria and new_* keys. */
+  ticketRule: {
+    criteria: 'criteria' as string | null,
+    /** Criteria rows proven for approval rules (P7); the same shape on ticket rules is not yet confirmed. */
+    fieldCriteriaConfirmed: null as boolean | null,
+    /** Criterion on the ticket type: not captured. */
+    ticketTypeCriterion: null as string | null,
+    setTeam: null as string | null,
+    setPriority: null as string | null,
+    setAgent: null as string | null,
+  },
+  /** Child tickets raised with a ticket. Evidence: probe found /Template. Nothing about children or the trigger yet. */
+  childTickets: {
+    children: null as string | null,
+    attach: null as string | null,
+  },
+  /** Show a section only for some answers. Evidence: ticket type section rows carry these two keys; format unknown. */
+  visibility: {
+    conditions: 'group_visibility_conditions' as string | null,
+    value: 'group_visibility_conditions_value' as string | null,
+    format: null as string | null,
+  },
+  /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
+  runbook: {
+    resource: null as string | null,
+  },
 };
+
+/**
+ * Rule B2 (2026-10-24): an area is offered to the planner only when everything its payloads need is known from
+ * evidence (no null left in its SPIKE_MAP sections). Until then plans list it under "can't do yet", and a plan that
+ * uses it anyway fails the checks.
+ */
+export interface Feature {
+  key: string;
+  /** Plain name, for "can't do yet" and check messages. */
+  name: string;
+  sections: (keyof typeof SPIKE_MAP)[];
+  /** Planner instructions, shown only once the feature is ready. */
+  prompt: string;
+}
+export const FEATURES: Feature[] = [
+  {
+    key: 'emails',
+    name: 'email templates and emails sent from action buttons',
+    sections: ['emailTemplate', 'actionEmail'],
+    prompt: `- email_template: name, subject, body (plain text; Halo variables only if inventory.email_templates shows them). Use it from an outcome's send_email.
+- outcome create may have send_email: email_template ref (pressing the button emails the requester). outcome set: { send_email: ref } adds that to an EXISTING action.`,
+  },
+  {
+    key: 'ticket_rules',
+    name: 'ticket rules (routing and priority based on answers)',
+    sections: ['ticketRule'],
+    prompt: `- ticket_rule: name, when: [{ ticket_type: ref } | { field: ref of a DROPDOWN field, equals: one of its options }] (all must match), then: { team?: ref, priority?: priority name from the inventory, agent?: ref }.`,
+  },
+  {
+    key: 'child_tickets',
+    name: 'child tickets raised automatically',
+    sections: ['childTickets'],
+    prompt: `- ticket_template: name, attach_to: ticket_type ref, children: [{ summary, ticket_type: ref, team?: ref }] (a ticket of attach_to raises these child tickets).`,
+  },
+  {
+    key: 'visibility',
+    name: 'showing a section only for some answers',
+    sections: ['visibility'],
+    prompt: `- ticket_type set may have show_section_when: [{ group: field_group ref ON that form, field: ref of a DROPDOWN field on the form, equals: [its options] }]: the section shows only for those answers.`,
+  },
+  {
+    key: 'runbooks',
+    name: 'runbooks and integrations',
+    sections: ['runbook'],
+    prompt: '',
+  },
+];
+
+/** What's still unknown for a feature: "section.key" for every null. Empty = ready. */
+export function featureGaps(f: Feature): string[] {
+  return f.sections.flatMap((sec) => Object.entries(SPIKE_MAP[sec] as Record<string, unknown>).filter(([, v]) => v === null).map(([k]) => `${sec}.${k}`));
+}
+export const featureReady = (f: Feature) => featureGaps(f).length === 0;
+/** Planner lines for the features that are ready. */
+export const readyFeaturePrompt = () => FEATURES.filter(featureReady).map((f) => f.prompt).filter(Boolean).join('\n');
+/** Plain names of the features not ready yet, for the planner's "unsupported" guidance. */
+export const notReadyFeatureNames = () => FEATURES.filter((f) => !featureReady(f)).map((f) => f.name);
+
+/** The features a plan step relies on. */
+export function featuresOf(step: PlanStep): Feature[] {
+  const keys = new Set<string>();
+  if (step.object === 'email_template' || step.send_email || step.set?.send_email) keys.add('emails');
+  if (step.object === 'ticket_rule') keys.add('ticket_rules');
+  if (step.object === 'ticket_template') keys.add('child_tickets');
+  if (step.set?.show_section_when?.length) keys.add('visibility');
+  return FEATURES.filter((f) => keys.has(f.key));
+}
 
 function departmentOf(ref: string, refs: Refs, warn: (m: string) => void): Record<string, unknown> {
   const row = refs[ref]?.row;
@@ -329,7 +441,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   label?: string;
@@ -395,11 +507,38 @@ export interface PlanStep {
     label?: string;
     // approval_group / team
     add_members?: string[];
+    // outcome: email the requester when the button is pressed
+    send_email?: string;
+    // ticket_type: show a section only for some answers
+    show_section_when?: SectionCondition[];
+    // email_template
+    subject?: string;
+    body?: string;
   };
   /** team: put the team in the same department as this reused team (step ref). Rule T3. */
   department_of?: string;
   /** outcome: Font Awesome icon name for the action button (default arrow-right). Rule O3. */
   icon?: string;
+  /** email_template: subject line and body. */
+  subject?: string;
+  body?: string;
+  /** outcome: email_template ref sent when the button is pressed. */
+  send_email?: string;
+  /** ticket_rule: conditions (all must match) and what it sets. */
+  when?: RuleCondition[];
+  then?: { team?: string; priority?: string; agent?: string };
+  /** ticket_template: the ticket type that raises these children, and the children. */
+  attach_to?: string;
+  children?: { summary: string; ticket_type: string; team?: string }[];
+}
+
+export type RuleCondition = { ticket_type: string } | { field: string; equals: string };
+
+/** Show a section (field group ref) only when a dropdown field (ref) has one of these answers. */
+export interface SectionCondition {
+  group: string;
+  field: string;
+  equals: string[];
 }
 
 /** A button on a workflow stage: on `step`, the action `via` (outcome ref) moves the ticket to `to_step`. */
@@ -511,6 +650,35 @@ export function bareFieldName(name = ''): string {
 function set(payload: Record<string, unknown>, prop: string | null, value: unknown, what: string, warn: (m: string) => void) {
   if (prop) payload[prop] = value;
   else warn(`SPIKE_MAP gap: don't know where "${what}" goes yet; skipped`);
+}
+
+/** A gap in SPIKE_MAP: warn (so the dry run and rule B1 stop an apply) and leave the payload alone. */
+function gap(what: string, warn: (m: string) => void) {
+  warn(`SPIKE_MAP gap: don't know how Halo stores ${what} yet; needs a capture (npm run capture:next)`);
+}
+
+/** A criteria row "dropdown field equals option" (rule P7 evidence: approvalprocessrule-5/6). */
+function dropdownCriterion(fieldName: string, option: { id?: unknown; name?: unknown }): Row {
+  return { tablename: 'faults', fieldname: fieldName, value_type: 'int', value_int: 0, value_string: String(option.id), value_display: String(option.name), type: 23 };
+}
+
+/** The option row of a dropdown ref. Fields created in this plan only get ids when built: a placeholder in the dry run. */
+function optionOf(ref: string, equals: string, refs: Refs, warn: (m: string) => void): { id: unknown; name: unknown } | null {
+  const r = refs[ref];
+  if (typeof r?.id === 'string' && r.id.startsWith('<new')) return { id: `<option "${equals}" of ${ref}>`, name: equals };
+  const option = ((r?.row?.values as Row[]) ?? []).find((v) => String(v.name).trim().toLowerCase() === equals.trim().toLowerCase());
+  if (!option) warn(`"${r?.row?.label ?? r?.name ?? ref}" has no option "${equals}"`);
+  return option ? { id: option.id, name: option.name } : null;
+}
+
+/** Point an action button at an email template (feature "emails"). */
+function setActionEmail(p: Row, templateRef: string, refs: Refs, warn: (m: string) => void) {
+  const m = SPIKE_MAP.actionEmail;
+  if (!m.send || !m.template) return gap('an action\'s email', warn);
+  p[m.send] = true;
+  p[m.template] = refs[templateRef]?.id;
+  if (!m.recipient || m.recipientRequester === null) return gap('who an action\'s email goes to', warn);
+  p[m.recipient] = m.recipientRequester;
 }
 
 // ---------- translators ----------
@@ -696,7 +864,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
               usage: 0,
               notifyonapprove: true,
               notifyonreject: true,
-              criteria: [{ tablename: 'faults', fieldname: String(info.name ?? field?.name), value_type: 'int', value_int: 0, value_string: String(option.id), value_display: String(option.name), type: 23 }],
+              criteria: [dropdownCriterion(String(info.name ?? field?.name), option)],
             },
           });
         }
@@ -815,6 +983,19 @@ export const translators: Record<PlanStep['object'], Translator> = {
             const { id: _id, guid: _guid, tickettype_id: _tt, ...rest } = r;
             rows.push({ ...rest, seq: ++n });
           }
+        }
+        out[m.fields as string] = rows;
+      }
+      if (st.show_section_when?.length) {
+        // Feature "visibility": the condition sits on the section's row on this form (fieldid 0, groupid = section).
+        const v = SPIKE_MAP.visibility;
+        const rows = (out[m.fields as string] as Row[]) ?? keepRows(current[m.fields as string]);
+        for (const c of st.show_section_when) {
+          const row = rows.find((r) => Number(r.fieldid) === 0 && Number(r.groupid) === Number(refs[c.group]?.id));
+          if (!row) { warn(`show_section_when: section "${refs[c.group]?.name}" isn't on this form`); continue; }
+          const options = c.equals.map((e) => optionOf(c.field, e, refs, warn)).filter(Boolean);
+          if (!v.conditions || !v.value || !v.format) { gap('a section\'s show-when condition', warn); continue; }
+          row[v.conditions] = { field: refs[c.field]?.name, options: options.map((o) => o!.id) }; // replaced once the format is captured
         }
         out[m.fields as string] = rows;
       }
@@ -945,7 +1126,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     resource: 'Outcome',
     template: 'template-outcome.json',
     nameKey: 'outcome',
-    build: (step, refs) => {
+    build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-outcome.json'), 'Outcome');
       p.outcome = step.name;
       p.buttonname = step.name;
@@ -959,7 +1140,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // "Triage Not Required", so every new forward action showed an X. Use the plan's icon, or a neutral one.
       // Evidence for the property: outcome-11 has icon "users" (a Font Awesome name).
       p.icon = step.icon ?? 'arrow-right';
+      if (step.send_email) setActionEmail(p, step.send_email, refs, warn);
       return p;
+    },
+    update: (step, refs, warn) => {
+      const out: Row = {};
+      if (step.set?.send_email) setActionEmail(out, step.set.send_email, refs, warn);
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
     },
   },
 
@@ -1001,7 +1189,81 @@ export const translators: Record<PlanStep['object'], Translator> = {
       return out;
     },
   },
+
+  email_template: {
+    // Feature "emails". Evidence: probe 24 Oct (header_text = subject, body_html = body). Shape from one of the
+    // instance's own templates (discovery).
+    resource: 'EmailTemplate',
+    template: 'template-emailtemplate.json',
+    build: (step, _refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-emailtemplate.json'), 'EmailTemplate');
+      const m = SPIKE_MAP.emailTemplate;
+      set(p, m.name, step.name, 'email template name', warn);
+      set(p, m.subject, step.subject ?? step.name, 'email subject', warn);
+      set(p, m.body, toHtml(step.body ?? ''), 'email body', warn);
+      return p;
+    },
+    update: (step, _refs, warn) => {
+      const m = SPIKE_MAP.emailTemplate;
+      const out: Row = {};
+      if (step.set?.subject) set(out, m.subject, step.set.subject, 'email subject', warn);
+      if (step.set?.body) set(out, m.body, toHtml(step.set.body), 'email body', warn);
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+  },
+
+  ticket_rule: {
+    // Feature "ticket_rules". Evidence: probe 24 Oct (criteria, new_* keys). Shape from an existing rule.
+    resource: 'TicketRules',
+    template: 'template-ticketrule.json',
+    build: (step, refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-ticketrule.json'), 'TicketRules');
+      const m = SPIKE_MAP.ticketRule;
+      p.name = step.name;
+      const criteria: Row[] = [];
+      for (const c of step.when ?? []) {
+        if ('ticket_type' in c) {
+          if (!m.ticketTypeCriterion) { gap('a ticket rule condition on the ticket type', warn); continue; }
+          criteria.push({ [m.ticketTypeCriterion]: refs[c.ticket_type]?.id });
+        } else {
+          if (!m.fieldCriteriaConfirmed) { gap('a ticket rule condition on a field (approval rules use type 23 rows; not confirmed for ticket rules)', warn); continue; }
+          const option = optionOf(c.field, c.equals, refs, warn);
+          if (option) criteria.push(dropdownCriterion(String(refs[c.field]?.name ?? ''), option));
+        }
+      }
+      if (!step.when?.length) warn('ticket rule: no conditions, so it would match every ticket');
+      set(p, m.criteria, criteria, 'ticket rule conditions', warn);
+      const t = step.then ?? {};
+      if (t.team) set(p, m.setTeam, refs[t.team]?.id, 'the team a rule sets', warn);
+      if (t.agent) set(p, m.setAgent, refs[t.agent]?.id, 'the agent a rule sets', warn);
+      if (t.priority) set(p, m.setPriority, t.priority, 'the priority a rule sets', warn);
+      if (!t.team && !t.agent && !t.priority) warn('ticket rule: sets nothing');
+      return p;
+    },
+  },
+
+  ticket_template: {
+    // Feature "child_tickets". Evidence: probe 24 Oct found /Template. Everything else waits for a capture.
+    resource: 'Template',
+    template: 'template-template.json',
+    build: (step, refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-template.json'), 'Template');
+      const m = SPIKE_MAP.childTickets;
+      p.name = step.name;
+      set(p, m.children, (step.children ?? []).map((c) => ({ summary: c.summary, tickettype_id: refs[c.ticket_type]?.id, team: refs[c.team ?? '']?.name })), 'child tickets', warn);
+      if (step.attach_to) set(p, m.attach, refs[step.attach_to]?.id, 'which ticket type raises the child tickets', warn);
+      return p;
+    },
+  },
 };
+
+/** Plain text (paragraphs split by blank lines) to simple HTML for an email body. HTML passes through. */
+function toHtml(text: string): string {
+  if (/<\w+[^>]*>/.test(text)) return text;
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return text.split(/\n\s*\n/).map((para) => `<p>${esc(para).replace(/\n/g, '<br>')}</p>`).join('');
+}
 
 /** Every ref a step points at, so the builder can check order before running. */
 export function refsOf(step: PlanStep): string[] {
@@ -1030,5 +1292,13 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.fields ?? []).map((f) => f.ref),
     ...(step.members ?? []),
     ...(step.groups ?? []),
+    step.send_email,
+    step.set?.send_email,
+    ...(step.set?.show_section_when ?? []).flatMap((c) => [c.group, c.field]),
+    ...(step.when ?? []).map((c) => ('ticket_type' in c ? c.ticket_type : c.field)),
+    step.then?.team,
+    step.then?.agent,
+    step.attach_to,
+    ...(step.children ?? []).flatMap((c) => [c.ticket_type, c.team]),
   ].filter((r): r is string => Boolean(r));
 }

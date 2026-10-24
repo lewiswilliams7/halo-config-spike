@@ -116,6 +116,7 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | # | Rule | Symptom it prevents | Where |
 |---|---|---|---|
 | B1 | An apply first dry-runs the whole plan; any warning, pre-flight gap or failure means nothing is written (`--allow-warnings` overrides after checking). Each step also refuses to write if it raised a warning. A failed step logs exactly what it tried to send. | G5 was applied with two warnings showing and stopped at step 32 of 32, half-built | `build-onboarding.ts` |
+| B2 | **An area is offered only when its payload is known from evidence.** Each area being mapped (emails, ticket rules, child tickets, section visibility, runbooks) has its unknowns as `null` in `SPIKE_MAP`. While any is null the planner is told it can't do it, a plan that uses it fails the checks, and its dry run warns, so B1 refuses an apply. A capture (`npm run capture:next`) fills the nulls and the area switches on by itself. | Five new areas were wanted before any of their records had been captured: building them from guesses could write wrong emails, rules or forms to a customer's Halo (24 Oct) | `translators.ts` `FEATURES`, `plan-checks.ts`, planner prompt |
 
 ## After a build
 
