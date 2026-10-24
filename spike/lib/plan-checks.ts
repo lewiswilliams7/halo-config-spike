@@ -2,7 +2,7 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the app's lib/specflow/plan-checks.ts (only the import line differs).
  */
-import { NON_MOVING_ACTION, type Plan, type PlanStep } from './translators.js';
+import { NON_MOVING_ACTION, refsOf, type Plan, type PlanStep } from './translators.js';
 
 export type CheckContext = {
   /** Custom field name to its inventory details: '"Label" dropdown: a | b'. */
@@ -108,6 +108,20 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     }
   }
 
+  // M12 (2026-10-24): "can't do yet" must not list things the builder now does. (A follow-up kept "conditional
+  // approvals aren't supported" and "changing actions on existing stages is not supported" from an older version
+  // after P7 and W8 had shipped, so the user was told to set them up by hand.)
+  const NOT_SUPPORTED = /\b(not supported|aren['’]t supported|isn['’]t supported|unsupported|can['’]t be built|cannot be built|out of scope|not possible)\b/i;
+  const NOW_SUPPORTED: [RegExp, string][] = [
+    [/conditional\s+\w*\s*approv|approv\w*\s+only\s+(when|if)/i, 'an approval that depends on a dropdown answer is a rules stage (P7); on an existing approval process, add it as a final stage with set.add_stages (P8)'],
+    [/(actions?|buttons?)\s+on\s+existing\s+(workflow\s+)?(stages?|steps?)|retarget/i, 'adding a button to an existing stage or sending an existing button elsewhere is workflow set.add_actions / set.retarget_actions (W8); only REMOVING a button is unsupported'],
+  ];
+  for (const u of plan.unsupported ?? []) {
+    if (!NOT_SUPPORTED.test(u)) continue;
+    const hit = NOW_SUPPORTED.find(([re]) => re.test(u));
+    if (hit) errors.push(`"can't do yet" says "${u}", but the builder can do this now: ${hit[1]}. Build the supported part and keep only what genuinely can't be built.`);
+  }
+
   // W6/W7 (2026-10-24): every new stage needs a way out, through a button that actually moves the ticket.
   // ("Pre-checks" left via Re-Assign only, which opens the reassign box: tickets were stuck there.)
   for (const s of steps) {
@@ -153,11 +167,17 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     const key = (x: PlanStep) => `${x.object}:${String(x.name ?? x.match?.name ?? '').toLowerCase()}:${x.action}`;
     const now = new Set(steps.map(key));
     const reply = String(plan.reply ?? '').toLowerCase();
-    for (const p of ctx.previousSteps) {
-      if (p.action === 'reuse' || now.has(key(p))) continue;
+    const dropped = ctx.previousSteps.filter((p) => p.action !== 'reuse' && !now.has(key(p)));
+    const droppedIds = new Set(dropped.map((p) => p.id));
+    // The reply may name the step, or say it removed that kind of thing ("removed the steps that created a new
+    // approval process"). A step that only pointed at another dropped step goes with it (attaching that approval).
+    const DROP_VERB = /\b(remov|drop|delet|no longer|instead|replac|undo|undid|scrap|took out|taken out)/;
+    const saysDropped = (object: string) => DROP_VERB.test(reply) && reply.includes(object.replace(/_/g, ' '));
+    for (const p of dropped) {
+      if (refsOf(p).some((r) => droppedIds.has(r))) continue;
       const shown = String(p.label ?? p.name ?? p.match?.name ?? '');
       const label = fieldLabel(ctx.fieldDetails?.[p.match?.name ?? '']) ?? shown;
-      if (![shown, label].some((n) => n && reply.includes(n.toLowerCase())))
+      if (![shown, label].some((n) => n && reply.includes(n.toLowerCase())) && !saysDropped(p.object))
         errors.push(`the follow-up drops "${label}" (${p.object}) from the plan without saying so. Keep it, or if the user asked for it to go, name it in reply.`);
     }
   }
