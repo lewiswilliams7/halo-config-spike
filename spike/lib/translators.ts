@@ -310,6 +310,8 @@ export type Approver =
   | { adhoc: true }; //                       type 8, agent picks at the time
 
 export interface Plan {
+  /** Planner output: one or two plain sentences to the user. */
+  reply?: string;
   request: string;
   steps: PlanStep[];
   /** Planner output: parts of the request the builder can't do yet, in plain words. */

@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { complete, parseJsonReply } from './lib/llm.js';
 import { INSTANCE_KEY, loadJson, saveJson, spikePath, timestamp } from './lib/halo.js';
 import { readInventory } from './lib/inventory.js';
+import { planChecks } from './lib/plan-checks.js';
 import { type Plan, type PlanStep, refsOf } from './lib/translators.js';
 
 
@@ -58,7 +59,7 @@ const examples = ['plans/onboarding.json', 'plans/workflow-test.json', 'plans/ap
 const SYSTEM = `You plan Halo ITSM configuration changes. You output ONE JSON object (no prose) that a deterministic builder executes after a human approves it.
 
 THE BUILDER CAN ONLY DO THIS (anything else is unsupported):
-Plan = { "request": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
+Plan = { "request": string, "reply": string, "existing_coverage": [{ "requirement": string, "status": "built" | "partial" | "missing", "existing": string }], "steps": Step[], "unsupported": string[], "assumptions": string[], "questions": string[] }
 Every step: { "id": unique snake_case, "object": one of below, "action": "create" | "reuse" | "update" }
 - reuse: { "match": { "name": exact existing name from the inventory } }. Use for anything that already exists.
 - create needs "name". Optional "based_on": exact name of an existing record of the same kind to copy settings from (choose a sensible, plain one; say which in assumptions).
@@ -106,8 +107,11 @@ RULES
 - SLA targets: use only priority names that appear in inventory.details.sla_targets.
 - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
 - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
-- A rule on a number (cost over £300, more than 10 users) can't use a number field yet: capture it as a dropdown of bands ("Under £300", "£300 or more") so the rule has something to test, and put the rule itself in unsupported until conditional approvals are supported.
-- Questions: at most 4, only for decisions the customer must make that the inventory can't answer (e.g. a business rule the request leaves open). Never ask about something inventory.details shows. Still plan the rest.
+- A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). The rule itself (approve only when "£300 or more") goes in unsupported until conditional approvals are supported. (M5)
+- When an approval should only happen under a condition that can't be built yet, do NOT attach the approval process to the ticket type: that sends every ticket for approval. Leave it off and put the conditional approval in unsupported. Only attach an approval that must run on every ticket, and then say so in an assumption starting "Every ticket of this type is approved by". (M6)
+- Questions (M7): at most 4, only for decisions that change what gets built and that the inventory can't answer. Never ask the user to confirm a name or detail they gave you. Still plan the rest.
+- Write every text for the customer (reply, existing_coverage, unsupported, assumptions, questions) in plain English with field LABELS (inventory.details.custom_fields), never internal names like CFhardware.
+- reply: one or two sentences, as a colleague would say them: what the plan does.
 - Be concise in names. Output JSON only.
 
 EXAMPLE PLANS (hand-written, proven on a real instance):
@@ -146,7 +150,10 @@ function validate(plan: Plan): string[] {
       const hit = Object.entries(inventory.details?.custom_fields ?? {}).find(([, d]) => stem(String(d).match(/^"([^"]*)"/)?.[1] ?? '') === stem(s.label!));
       if (hit) errors.push(`${where}: field "${hit[0]}" already exists with the label "${s.label}": reuse it`);
     }
-    const twin = s.action === 'create' && s.name ? (NAMES_BY_OBJECT[s.object] ?? []).find((n) => n.length >= 6 && s.name!.toLowerCase().startsWith(n.toLowerCase()) && s.name!.length > n.length) : undefined;
+    // A near-copy is the same name plus a copy marker ("Joiner Workflow (People Ops)", "New Starter v2", "CFhardware2"),
+      // not a longer name that happens to share a prefix ("CFHardwareCostBand" is a different field from "CFhardware").
+      const copyMarker = (rest: string) => (s.object === 'field' ? /^(v?\d+|copy|new|old)$/i.test(rest) : /^[\s\-_(]/.test(rest));
+      const twin = s.action === 'create' && s.name ? (NAMES_BY_OBJECT[s.object] ?? []).find((n) => n.length >= 6 && s.name!.toLowerCase().startsWith(n.toLowerCase()) && s.name!.length > n.length && copyMarker(s.name!.slice(n.length))) : undefined;
     if (twin) errors.push(`${where}: "${s.name}" is a copy of the existing "${twin}": update "${twin}" instead`);
     if ((plan.questions?.length ?? 0) > 4 && s === plan.steps[0]) errors.push(`${plan.questions!.length} questions: keep at most 4, and drop any that inventory.details answers`);
     if (s.action === 'create' && s.name && / v\d+$|\(copy\)|\bcopy of\b/i.test(s.name))
@@ -184,6 +191,7 @@ function validate(plan: Plan): string[] {
   const used = new Set((plan.steps as PlanStep[]).flatMap((x) => refsOf(x)));
   for (const s of plan.steps as PlanStep[])
     if (s.action === 'create' && s.object !== 'ticket_type' && !used.has(s.id)) errors.push(`step "${s.id}": "${s.name}" is created but nothing uses it; attach it or drop it (ask in questions instead)`);
+  errors.push(...planChecks(plan, { fieldDetails: inventory.details?.custom_fields as Record<string, string> | undefined, userMessages: [request] }));
   return errors;
 }
 
