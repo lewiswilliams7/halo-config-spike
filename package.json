@@ -24,7 +24,8 @@
     "try-post": "tsx spike/try-post.ts",
     "bisect-tt": "tsx spike/bisect-tt.ts",
     "capture": "tsx spike/capture.ts",
-    "repair:usage": "tsx spike/repair-field-usage.ts"
+    "repair:usage": "tsx spike/repair-field-usage.ts",
+    "probe": "tsx spike/probe.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"

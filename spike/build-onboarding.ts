@@ -41,9 +41,9 @@ if (planFile === 'latest') {
 if (planFile === 'downloads') {
   const dir = join(homedir(), 'Downloads');
   const files = existsSync(dir)
-    ? readdirSync(dir).filter((f) => /^specflow-plan.*\.json$/i.test(f)).map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)
+    ? readdirSync(dir).filter((f) => /^(enact|specflow)-plan.*\.json$/i.test(f)).map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)
     : [];
-  if (!files.length) throw new Error(`No specflow-plan*.json in ${dir}: use "Download for the builder" on a ready plan in the app first.`);
+  if (!files.length) throw new Error(`No enact-plan*.json in ${dir}: use "Download for the builder" on a ready plan in the app first.`);
   const target = `plans/generated/app-${files[0].f.replace(/\s+/g, '-')}`;
   mkdirSync(spikePath('plans/generated'), { recursive: true });
   copyFileSync(join(dir, files[0].f), spikePath(target));
