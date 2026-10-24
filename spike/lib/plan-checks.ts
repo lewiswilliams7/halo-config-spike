@@ -11,7 +11,23 @@ export type CheckContext = {
   userMessages?: string[];
   /** Questions asked on earlier turns. The user has replied since, so asking again is a loop. */
   askedBefore?: string[];
+  /** Fields that are mandatory everywhere they appear on the instance (marked * in the inventory). */
+  alwaysMandatory?: Set<string>;
+  /** The previous version's steps, on a follow-up (rule M8). */
+  previousSteps?: PlanStep[];
 };
+
+/** Field names marked * (mandatory) in every form or section they appear in. */
+export function mandatoryEverywhere(lists: string[][]): Set<string> {
+  const seen = new Map<string, boolean>();
+  for (const list of lists)
+    for (const raw of list) {
+      const name = String(raw).replace(/\*$/, '');
+      const star = String(raw).endsWith('*');
+      seen.set(name, (seen.get(name) ?? true) && star);
+    }
+  return new Set([...seen].filter(([, all]) => all).map(([n]) => n));
+}
 
 /** "Under £300", "£300 or more", "Over 10 users": a band on a number. */
 export function isBand(option: string): boolean {
@@ -107,5 +123,25 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     if (/\bCF[A-Za-z0-9_]+/.test(q)) errors.push(`question "${q}" uses an internal field name; use the field's label.`);
   }
   if (plan.reply && /\bCF[A-Za-z0-9_]+/.test(plan.reply)) errors.push('"reply" uses an internal field name; use the field\'s label.');
+
+  // M7: don't ask whether to make a field mandatory when it already is everywhere it appears.
+  for (const q of qs) {
+    if (!/\b(mandatory|required|compulsory)\b/i.test(q)) continue;
+    for (const name of ctx.alwaysMandatory ?? []) {
+      const label = fieldLabel(ctx.fieldDetails?.[name]);
+      if ((label && q.toLowerCase().includes(label.toLowerCase())) || q.includes(name))
+        errors.push(`question "${q}" asks about making "${label ?? name}" mandatory, but it is already mandatory everywhere it appears. Don't ask; reuse it as it is.`);
+    }
+  }
+
+  // M8: on a follow-up, the reply must not claim a change the plan doesn't make.
+  if (ctx.previousSteps && plan.reply) {
+    const key = (xs: PlanStep[]) => JSON.stringify([...xs].sort((a, b) => a.id.localeCompare(b.id)));
+    const unchanged = key(ctx.previousSteps) === key(steps);
+    const claims = /\b(i['’]ll|i will|i['’]ve|i have|now|will)\b[^.]*\b(add|adding|make|making|set|setting|change|changing|switch|move|remove|drop|create|rename|update|put|mark)\b/i;
+    const denies = /\b(nothing|no change|no changes|unchanged|won['’]t change|not chang|no need)\b/i.test(plan.reply);
+    if (unchanged && !denies && claims.test(plan.reply))
+      errors.push(`"reply" says "${plan.reply}", but the plan's steps are unchanged. Make that change in upsert_steps (for example field_mandatory on the form or section that holds the field), or if it can't be done, say so plainly in reply and keep the plan as it is.`);
+  }
   return errors;
 }

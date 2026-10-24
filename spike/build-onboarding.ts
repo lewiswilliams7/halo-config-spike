@@ -10,7 +10,9 @@
  * an existing one with a partial POST; then read it back to verify. Re-running is safe: anything that already exists
  * with the same name is reused, not duplicated. Stops at the first hard failure.
  */
-import { existsSync, readdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   assertWritesAllowed,
   env,
@@ -53,6 +55,19 @@ if (planFile === 'latest') {
   const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json')).sort() : [];
   if (!files.length) throw new Error('No generated plans yet: run npm run plan first.');
   planFile = `plans/generated/${files.at(-1)}`;
+}
+// --plan downloads = the newest plan downloaded from the Specflow app ("Download for the builder"), copied into
+// plans/generated/ so runs can be traced back to it. Same dry-run gate (B1) as any other plan.
+if (planFile === 'downloads') {
+  const dir = join(homedir(), 'Downloads');
+  const files = existsSync(dir)
+    ? readdirSync(dir).filter((f) => /^specflow-plan.*\.json$/i.test(f)).map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t)
+    : [];
+  if (!files.length) throw new Error(`No specflow-plan*.json in ${dir}: use "Download for the builder" on a ready plan in the app first.`);
+  const target = `plans/generated/app-${files[0].f.replace(/\s+/g, '-')}`;
+  mkdirSync(spikePath('plans/generated'), { recursive: true });
+  copyFileSync(join(dir, files[0].f), spikePath(target));
+  planFile = target;
 }
 const freshTemplates = args.includes('--fresh-templates');
 
