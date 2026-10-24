@@ -160,6 +160,11 @@ function checkFieldRows(back: unknown, sent: unknown, what: string): string[] {
   return out;
 }
 
+/** Buttons that resolve, close or cancel a ticket (Halo system actions): never rerouted into a new stage (rule W5). */
+export const CLOSING_ACTION = /resolv|close|cancel|complete|reject/i;
+/** Halo actions that don't move a ticket on (they open a dialog): never a way out of a stage (rule W6). */
+export const NON_MOVING_ACTION = /re-?assign|add note|note|email|reply|log time|merge|split|link|watch|follow/i;
+
 /** Insert new stages into a workflow payload (new copy OR an existing workflow). Local ids only (rule W1/W2). */
 function applyInserts(p: Row, inserts: InsertStep[], refs: Refs): Row {
   const steps = p.steps as Row[];
@@ -199,7 +204,18 @@ function applyInserts(p: Row, inserts: InsertStep[], refs: Refs): Row {
       group_restrictions: [],
     });
 
-    // Into the new step: an extra action on the "after" step.
+    // Rule W5 (2026-10-24): A's own buttons that went where the new stage now leads would let people skip it
+    // ("Checks Done" was added, but Request Fulfilment's old buttons still went straight on). Send them into the
+    // new stage instead. Buttons that resolve or close keep going where they did: rerouting those would close the
+    // ticket while it sits in the new stage. Approval branches are left alone.
+    const exitIds = new Set(ins.exits.map((e) => Number(byName(e.to_step)?.step_id)));
+    for (const a of actions) {
+      if (Number(a.action_type) !== 1 || Number(a.approval_result ?? -1) !== -1) continue;
+      if (!exitIds.has(Number(a.end_step)) || CLOSING_ACTION.test(String(a.action_name ?? ''))) continue;
+      a.end_step = newStepId;
+    }
+
+    // Into the new step: the plan's own button on the "after" step.
     actions.push(action(ins.enter_via, Number(after.step_id), newStepId, actions.length + 1));
     after.actions = actions;
 

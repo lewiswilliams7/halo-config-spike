@@ -2,7 +2,7 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the app's lib/specflow/plan-checks.ts (only the import line differs).
  */
-import type { Plan, PlanStep } from './translators.js';
+import { NON_MOVING_ACTION, type Plan, type PlanStep } from './translators.js';
 
 export type CheckContext = {
   /** Custom field name to its inventory details: '"Label" dropdown: a | b'. */
@@ -105,6 +105,19 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
       const approval = s.action === 'create' ? s.approval : s.set?.approval;
       if (approval)
         errors.push(`step "${s.id}": attaches "${nameOf(approval)}" to the ticket type, so EVERY ticket goes for approval, but the approval should depend on a condition that can't be built yet ("${conditional}"). Leave the approval off the ticket type. Only if some approval must happen on every ticket regardless, keep it and add an assumption starting "Every ticket of this type is approved by ...".`);
+    }
+  }
+
+  // W6/W7 (2026-10-24): every new stage needs a way out, through a button that actually moves the ticket.
+  // ("Pre-checks" left via Re-Assign only, which opens the reassign box: tickets were stuck there.)
+  for (const s of steps) {
+    if (s.object !== 'workflow') continue;
+    for (const ins of [...(s.insert_steps ?? []), ...(s.insert_step ? [s.insert_step] : []), ...(s.set?.insert_steps ?? [])]) {
+      if (!ins.exits?.length) errors.push(`step "${s.id}": the new stage "${ins.name}" has no way out. Give it at least one exit (a button and the stage it leads to, e.g. Closed).`);
+      for (const e of ins.exits ?? []) {
+        const via = nameOf(e.via);
+        if (NON_MOVING_ACTION.test(via)) errors.push(`step "${s.id}": "${ins.name}" exits via "${via}", which doesn't move a ticket on (it opens a dialog). Use a plain action, e.g. a new one named for what happens next.`);
+      }
     }
   }
 

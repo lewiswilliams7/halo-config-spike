@@ -1,19 +1,153 @@
 {
   "request": "Test: change existing things in place. Add a stage to the live service request workflow, extend HR Onboarding's form, make a status pause the SLA, add an option and a member.",
   "steps": [
-    { "id": "ag_kaleem", "object": "agent", "action": "reuse", "match": { "name": "Kaleem Smith" } },
-    { "id": "team_hr", "object": "team", "action": "reuse", "match": { "name": "Human Resources" } },
-    { "id": "f_start", "object": "field", "action": "reuse", "match": { "name": "CFstartDate" } },
-    { "id": "f_laptop", "object": "field", "action": "reuse", "match": { "name": "CFlaptopType" } },
-    { "id": "fg_starter", "object": "field_group", "action": "reuse", "match": { "name": "New Starter Details" } },
-    { "id": "f_laptop_opts", "object": "field", "action": "update", "match": { "name": "CFlaptopType" }, "set": { "add_options": ["Executive Laptop"], "label": "Laptop type" } },
-    { "id": "fg_add", "object": "field_group", "action": "update", "match": { "name": "New Starter Details" }, "set": { "add_fields": [{ "ref": "f_laptop", "mandatory": true }] } },
-    { "id": "tt_hr", "object": "ticket_type", "action": "update", "match": { "name": "HR Onboarding" }, "set": { "team": "team_hr", "add_fields": [{ "ref": "f_start", "mandatory": true }] } },
-    { "id": "st_hold", "object": "status", "action": "update", "match": { "name": "On Hold" }, "set": { "sla_action": "hold" } },
-    { "id": "grp_hr", "object": "approval_group", "action": "update", "match": { "name": "Human Resource Approval Group" }, "set": { "add_members": ["ag_kaleem"] } },
-    { "id": "o_check", "object": "outcome", "action": "create", "name": "Checks Done" },
-    { "id": "o_reassign", "object": "outcome", "action": "reuse", "match": { "name": "Re-Assign" } },
-    { "id": "wf_live", "object": "workflow", "action": "update", "match": { "name": "Service Request Workflow (with approval)" },
-      "set": { "insert_steps": [{ "name": "Pre-checks", "after_step": "Request Fulfilment", "enter_via": "o_check", "exits": [{ "via": "o_reassign", "to_step": "Closed" }] }] } }
+    {
+      "id": "ag_kaleem",
+      "object": "agent",
+      "action": "reuse",
+      "match": {
+        "name": "Kaleem Smith"
+      }
+    },
+    {
+      "id": "team_hr",
+      "object": "team",
+      "action": "reuse",
+      "match": {
+        "name": "Human Resources"
+      }
+    },
+    {
+      "id": "f_start",
+      "object": "field",
+      "action": "reuse",
+      "match": {
+        "name": "CFstartDate"
+      }
+    },
+    {
+      "id": "f_laptop",
+      "object": "field",
+      "action": "reuse",
+      "match": {
+        "name": "CFlaptopType"
+      }
+    },
+    {
+      "id": "fg_starter",
+      "object": "field_group",
+      "action": "reuse",
+      "match": {
+        "name": "New Starter Details"
+      }
+    },
+    {
+      "id": "f_laptop_opts",
+      "object": "field",
+      "action": "update",
+      "match": {
+        "name": "CFlaptopType"
+      },
+      "set": {
+        "add_options": [
+          "Executive Laptop"
+        ],
+        "label": "Laptop type"
+      }
+    },
+    {
+      "id": "fg_add",
+      "object": "field_group",
+      "action": "update",
+      "match": {
+        "name": "New Starter Details"
+      },
+      "set": {
+        "add_fields": [
+          {
+            "ref": "f_laptop",
+            "mandatory": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "tt_hr",
+      "object": "ticket_type",
+      "action": "update",
+      "match": {
+        "name": "HR Onboarding"
+      },
+      "set": {
+        "team": "team_hr",
+        "add_fields": [
+          {
+            "ref": "f_start",
+            "mandatory": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "st_hold",
+      "object": "status",
+      "action": "update",
+      "match": {
+        "name": "On Hold"
+      },
+      "set": {
+        "sla_action": "hold"
+      }
+    },
+    {
+      "id": "grp_hr",
+      "object": "approval_group",
+      "action": "update",
+      "match": {
+        "name": "Human Resource Approval Group"
+      },
+      "set": {
+        "add_members": [
+          "ag_kaleem"
+        ]
+      }
+    },
+    {
+      "id": "o_check",
+      "object": "outcome",
+      "action": "create",
+      "name": "Checks Done"
+    },
+    {
+      "id": "o_resolve",
+      "object": "outcome",
+      "action": "reuse",
+      "match": {
+        "name": "Resolve Ticket"
+      }
+    },
+    {
+      "id": "wf_live",
+      "object": "workflow",
+      "action": "update",
+      "match": {
+        "name": "Service Request Workflow (with approval)"
+      },
+      "set": {
+        "insert_steps": [
+          {
+            "name": "Pre-checks",
+            "after_step": "Request Fulfilment",
+            "enter_via": "o_check",
+            "exits": [
+              {
+                "via": "o_resolve",
+                "to_step": "Closed"
+              }
+            ]
+          }
+        ]
+      }
+    }
   ]
 }
