@@ -212,8 +212,10 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
 
       if (!apply) {
         refs[step.id] = { id: `<new ${step.id}>` as unknown as number, name: step.name ?? '' };
-        record({ outcome: 'would create', payload });
-        say(`· ${label}  would create`);
+        const extras = t.relatedPreview?.(step, refs) ?? [];
+        record({ outcome: 'would create', payload, ...(extras.length ? { detail: `with ${extras.join('; ')}` } : {}) });
+        say(`· ${label}  would create${extras.length ? `, with ${extras.length} related record(s)` : ''}`);
+        for (const x of extras) say(`      + ${x}`);
       } else {
         if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
         attempted = [payload];
@@ -240,8 +242,20 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         for (const x of extra) warn(x);
         const ok = nameOk && !extra.length;
 
-        record({ outcome: 'created', id: created.id, payload });
+        // Records that hang off this one (e.g. approval rules, P7): created now, each read back.
+        const madeRelated: string[] = [];
+        if (t.related) {
+          for (const r of await t.related(back ?? created, step, refs)) {
+            const made = firstRecord(await halo.post(`/${r.resource}`, [r.payload]));
+            const rb = made?.id ? firstRecord(await halo.get(`/${r.resource}/${made.id}`, { includedetails: 'true' })) : null;
+            if (!rb?.id) warn(`${r.label}: not there after saving`);
+            else madeRelated.push(`${r.label} (id ${rb.id})`);
+          }
+        }
+
+        record({ outcome: 'created', id: created.id, payload, ...(madeRelated.length ? { detail: `with ${madeRelated.join('; ')}` } : {}) });
         say(`+ ${label}  created id ${created.id}${ok ? ', verified' : ''}`);
+        for (const x of madeRelated) say(`      + ${x}, verified`);
       }
       for (const w of warnings) say(`    ! ${w}`);
     } catch (err) {

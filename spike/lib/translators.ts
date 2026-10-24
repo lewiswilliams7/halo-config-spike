@@ -10,7 +10,7 @@
  * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
 import { cleanForCreate } from './clean.js';
-import { runtime } from './runtime.js';
+import { firstRecord, runtime } from './runtime.js';
 
 export const SPIKE_MAP = {
   /** FieldInfo.type. Evidence: fieldinfo-141 (text=0), -114 (memo=1), -124 (dropdown=2),
@@ -46,6 +46,8 @@ export const SPIKE_MAP = {
     agentStepType: 1,
     groupStepType: 3,
     adhocStepType: 8,
+    /** Approvers chosen by rules. Evidence: approvalprocess-1 step 4 (type 42) with rules 5 and 6 (gethandoveruk, 24 Oct). */
+    rulesStepType: 42,
     approverIdKey: 'agent_id_or_cab_id',
     minApproversKey: 'minapprovers',
   },
@@ -383,7 +385,16 @@ export type Approver =
   | { line_manager: true } //                 type 10
   | { agent: string } //                      type 1, ref to an agent step
   | { group: string; min?: number } //        type 3, ref to an approval_group step
-  | { adhoc: true }; //                       type 8, agent picks at the time
+  | { adhoc: true } //                        type 8, agent picks at the time
+  | { rules: ApprovalRule[] }; //             type 42, approvers from rules (P7); approves itself when none match
+
+/** One approval rule: when the dropdown `field` (ref) is `equals`, `group` or `agent` (refs) must approve (rule P7). */
+export interface ApprovalRule {
+  field: string;
+  equals: string;
+  group?: string;
+  agent?: string;
+}
 
 export interface Plan {
   /** Planner output: one or two plain sentences to the user. */
@@ -408,6 +419,10 @@ export interface Translator {
   /** A real follow-up update to send straight after creating. Some objects only finish setting up on their first save. */
   /** Return null when there's nothing to do for this record. `sent` = the payload that was created. */
   afterCreate?: (id: number, sent: Record<string, unknown>) => Record<string, unknown> | null;
+  /** Records that belong to the one just created and need its ids (e.g. approval rules, rule P7). Created straight after it. */
+  related?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<{ resource: string; payload: Record<string, unknown>; label: string }[]>;
+  /** What `related` will add, for the dry run. */
+  relatedPreview?: (step: PlanStep, refs: Refs) => string[];
   /** Property holding the record's name, if not `name` (e.g. Outcome uses `outcome`). */
   nameKey?: string;
   /** For action 'update': the partial payload (without id) to send. `current` = the record's detail read. */
@@ -611,6 +626,43 @@ export const translators: Record<PlanStep['object'], Translator> = {
   approval_process: {
     resource: 'ApprovalProcess',
     template: 'template-approvalprocess.json',
+    // Rule P7 (2026-10-24): a rules stage needs one ApprovalProcessRule per condition, pointing at the process and
+    // the stage by id. Evidence: approvalprocessrule-5/6 (criteria type 23 on a dropdown, value_string = option id).
+    relatedPreview: (step, refs) =>
+      (step.approvers ?? []).flatMap((a) => ('rules' in a ? a.rules : [])).map((r) => `rule: if ${refs[r.field]?.name ?? r.field} is "${r.equals}", ${refs[r.group ?? r.agent ?? '']?.name ?? r.group ?? r.agent} approves`),
+    related: async (created, step, refs) => {
+      const out: { resource: string; payload: Record<string, unknown>; label: string }[] = [];
+      const stages = [...((created.steps as Row[]) ?? [])].sort((a, b) => Number(a.sequence) - Number(b.sequence));
+      for (const [i, a] of (step.approvers ?? []).entries()) {
+        if (!('rules' in a)) continue;
+        const stage = stages[i];
+        if (!stage?.id) throw new Error(`Approval "${step.name}": Halo didn't return stage ${i + 1}, so its rules can't be attached`);
+        for (const r of a.rules) {
+          const field = refs[r.field];
+          const info = firstRecord(await runtime().halo.get(`/FieldInfo/${field?.id}`, { includedetails: 'true' })) ?? {};
+          const option = ((info.values as Row[]) ?? []).find((v) => String(v.name).trim().toLowerCase() === r.equals.trim().toLowerCase());
+          if (!option) throw new Error(`Approval rule: "${info.label ?? field?.name}" has no option "${r.equals}"`);
+          const who = refs[r.group ?? r.agent ?? ''];
+          out.push({
+            resource: 'ApprovalProcessRule',
+            label: `rule: if ${info.label ?? field?.name} is "${r.equals}", ${who?.name} approves`,
+            payload: {
+              name: `${step.name}: ${info.label ?? field?.name} is ${r.equals}`.slice(0, 100),
+              precedence: 50,
+              type: r.group ? SPIKE_MAP.approval.groupStepType : SPIKE_MAP.approval.agentStepType,
+              agent_id_or_cab_id: who?.id,
+              approval_process_id: created.id,
+              approval_process_step_id: stage.id,
+              usage: 0,
+              notifyonapprove: true,
+              notifyonreject: true,
+              criteria: [{ tablename: 'faults', fieldname: String(info.name ?? field?.name), value_type: 'int', value_int: 0, value_string: String(option.id), value_display: String(option.name), type: 23 }],
+            },
+          });
+        }
+      }
+      return out;
+    },
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-approvalprocess.json'), 'ApprovalProcess');
       const m = SPIKE_MAP.approval;
@@ -630,6 +682,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const row: Record<string, unknown> = { ...shape, sequence: i + 1, name: '', agent_name: '', cab_name: '' };
         if ('line_manager' in a) row.type = m.lineManagerStepType;
         else if ('adhoc' in a) row.type = m.adhocStepType;
+        else if ('rules' in a) {
+          // Rule P7: approvers come from rules; when no rule matches the ticket, the stage approves itself.
+          row.type = m.rulesStepType;
+          row[m.approverIdKey] = 0;
+          row.autoapproveifnoapprovers = true;
+        }
         else if ('agent' in a) {
           row.type = m.agentStepType;
           row[m.approverIdKey] = refs[a.agent]?.id;
@@ -925,6 +983,7 @@ export function refsOf(step: PlanStep): string[] {
     ...[...(step.set?.add_actions ?? []), ...(step.set?.retarget_actions ?? [])].map((c) => c.via),
     step.department_of,
     ...(step.approvers ?? []).map((a) => ('agent' in a ? a.agent : 'group' in a ? a.group : undefined)),
+    ...(step.approvers ?? []).flatMap((a) => ('rules' in a ? a.rules.flatMap((r) => [r.field, r.group, r.agent]) : [])),
     ...[...(step.insert_steps ?? []), ...(step.insert_step ? [step.insert_step] : [])].flatMap((x) => [x.enter_via, ...x.exits.map((e) => e.via)]),
     ...(step.fields ?? []).map((f) => f.ref),
     ...(step.members ?? []),

@@ -125,6 +125,28 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     }
   }
 
+  // P7 (2026-10-24): an approval rule tests a dropdown's answer. The field must be a dropdown and the answer one of
+  // its options, and the rule must name who approves.
+  for (const s of steps) {
+    if (s.object !== 'approval_process') continue;
+    for (const a of s.approvers ?? []) {
+      if (!('rules' in a)) continue;
+      if (!a.rules?.length) errors.push(`step "${s.id}": a rules stage needs at least one rule`);
+      for (const r of a.rules ?? []) {
+        const f = steps.find((x) => x.id === r.field);
+        if (!f || f.object !== 'field') { errors.push(`step "${s.id}": an approval rule's "field" must be a field step (got "${r.field}")`); continue; }
+        if (!r.group && !r.agent) errors.push(`step "${s.id}": the rule for "${r.equals}" doesn't say who approves (group or agent)`);
+        const details = ctx.fieldDetails?.[f.match?.name ?? ''];
+        const isDropdown = f.action === 'create' ? f.type === 'dropdown' : / dropdown/.test(details ?? '');
+        if (!isDropdown) { errors.push(`step "${s.id}": approval rules can only test a dropdown; "${f.label ?? fieldLabel(details) ?? f.match?.name}" isn't one`); continue; }
+        const added = steps.filter((x) => x.object === 'field' && x.action === 'update' && x.match?.name === f.match?.name).flatMap((x) => x.set?.add_options ?? []);
+        const options = f.action === 'create' ? f.options ?? [] : [...existingOptions(details), ...added];
+        if (!options.some((o) => o.trim().toLowerCase() === r.equals.trim().toLowerCase()))
+          errors.push(`step "${s.id}": "${f.label ?? fieldLabel(details) ?? f.match?.name}" has no option "${r.equals}" (it has ${options.join(', ') || 'none'})`);
+      }
+    }
+  }
+
   // M7: questions must be worth asking.
   const qs = plan.questions ?? [];
   const followUp = (ctx.userMessages?.length ?? 0) > 1;
