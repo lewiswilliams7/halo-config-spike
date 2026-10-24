@@ -32,15 +32,15 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 
 | Area | Status | Notes |
 |---|---|---|
-| Email templates, and emails sent from an action | 🔒 | Built, switched off until captured (B2). Gaps: template name key, who the email goes to |
-| Ticket rules (routing, priority on answers) | 🔒 | Built, switched off until captured (B2). Gaps: ticket type condition, which `new_*` sets team / priority / agent, criteria rows confirmed |
+| Email templates, and emails sent from an action | 🔒 | Templates proven (sample -100). Action email off: which `sendemail` number sends, and who to |
+| Ticket rules: route to a team or agent on ticket type and answers | 🧪 | TR1, TR2. Switched on; proof run on the trial pending (`npm run learn -- --apply`). Setting a priority: 🔒 (needs the priority number) |
 | Child tickets (ticket templates) | 🔒 | Built, switched off until captured (B2). Gaps: how children and the trigger are stored |
 | Canned text | ⬜ | |
 | Escalation and SLA breach notifications | ⬜ | |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
 | Service catalogue (services, portal request types) | ⬜ | |
 | Agents, roles and permissions | ⬜ | Sensitive: needs extra approval UX |
-| Show a section only for some answers | 🔒 | Built, switched off until captured (B2). Gap: the condition's format (`group_visibility_conditions`) |
+| Show a field only for some answers | 🧪 | V1. Switched on; proof run pending. Sections: 🔒 (shape not understood) |
 | Workflow edits beyond inserting a step | ⬜ | Remove, reorder, conditions, automations |
 
 ## Tier 3: specialist (later, or partner-led)

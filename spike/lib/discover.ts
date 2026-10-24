@@ -132,7 +132,8 @@ export function needsFor(steps: PlanStep[]): Need[] {
         });
         break;
       case 'ticket_rule':
-        add({ file: 'template-ticketrule.json', resource: 'TicketRules', why: 'ticket rule', accept: (d) => Array.isArray(d[SPIKE_MAP.ticketRule.criteria ?? 'criteria']) });
+        // A ticket rule (use 0), not an impact/urgency priority rule (use 1/2). Its effects are wiped by the translator.
+        add({ file: 'template-ticketrule.json', resource: 'TicketRules', why: 'ticket rule', accept: (d) => Array.isArray(d[SPIKE_MAP.ticketRule.criteria ?? 'criteria']), prefer: (d) => Number(d.use ?? 0) === 0 });
         break;
       case 'ticket_template':
         add({ file: 'template-template.json', resource: 'Template', why: 'ticket template', accept: () => true });

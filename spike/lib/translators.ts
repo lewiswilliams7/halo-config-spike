@@ -67,44 +67,54 @@ export const SPIKE_MAP = {
   },
 
   // ---- Areas being mapped (24 Oct). Each null is an unknown: the area stays switched off (rule B2) until a capture
-  // (npm run capture:next) fills it. Keys below that are NOT null come from the probe of 24 Oct (list rows' keys).
+  // (npm run learn -- --apply) fills it. Evidence: learning run on gethandoveruk, 24 Oct (NOTES.md).
 
-  /** Email templates. Evidence: probe, EmailTemplate rows carry header_text (subject) and body_html. */
+  /** Email templates. Evidence: learn, sample -100 kept name, header_text (subject), body_html; Halo derives body_text. */
   emailTemplate: {
     subject: 'header_text' as string | null,
     body: 'body_html' as string | null,
-    /** Property holding the template's name (list rows showed names, the key wasn't recorded). */
-    name: null as string | null,
+    name: 'name' as string | null,
   },
-  /** An action button that sends an email. Evidence: probe, Outcome has sendemail and emailtemplate_id. */
+  /** An action button that sends an email. Evidence: learn, Outcome has sendemail (a NUMBER: posting true was refused
+   *  with a 400; every action read has 2) and emailtemplate_id. Which number means "send", and who it goes to: not yet. */
   actionEmail: {
     send: 'sendemail' as string | null,
+    sendValue: null as number | null,
     template: 'emailtemplate_id' as string | null,
-    /** Who the email goes to (requester, agent, ...): not captured. */
     recipient: null as string | null,
     recipientRequester: null as number | string | null,
   },
-  /** Ticket rules (routing, priority on matching tickets). Evidence: probe, TicketRules rows have criteria and new_* keys. */
+  /** Ticket rules (routing on matching tickets). Evidence: learn. Halo's own rules 13-16 (use 0 = a ticket rule; 1/2 are
+   *  impact/urgency priority rules), and sample rule 27, whose type 23 dropdown criterion Halo stored as sent. */
   ticketRule: {
     criteria: 'criteria' as string | null,
-    /** Criteria rows proven for approval rules (P7); the same shape on ticket rules is not yet confirmed. */
-    fieldCriteriaConfirmed: null as boolean | null,
-    /** Criterion on the ticket type: not captured. */
-    ticketTypeCriterion: null as string | null,
-    setTeam: null as string | null,
-    setPriority: null as string | null,
-    setAgent: null as string | null,
+    fieldCriteriaConfirmed: true as boolean | null,
+    /** Halo's rule 13 "Downtime Started": criteria row fieldname requesttypenew, value_int = ticket type id, type 0. */
+    ticketTypeCriterion: 'requesttypenew' as string | null,
+    /** Rules 13-16: new_teamid (id) with new_team (name); new_agent_id. -1 = not set. */
+    setTeam: 'new_teamid' as string | null,
+    setTeamName: 'new_team' as string | null,
+    setAgent: 'new_agent_id' as string | null,
+  },
+  /** A rule that sets the priority: new_priority_id is the priority's NUMBER (rules 14-16 use 1, 2), but /Priority rows
+   *  give a guid id (posting it was refused). Where the number lives on a priority: not yet. */
+  rulePriority: {
+    setPriority: 'new_priority_id' as string | null,
+    priorityNumberKey: null as string | null,
   },
   /** Child tickets raised with a ticket. Evidence: probe found /Template. Nothing about children or the trigger yet. */
   childTickets: {
     children: null as string | null,
     attach: null as string | null,
   },
-  /** Show a section only for some answers. Evidence: ticket type section rows carry these two keys; format unknown. */
+  /** Show a field only for some answers. Evidence: learn, five form rows on gethandoveruk (Absence Management, Employee
+   *  Information Change, Employee Transfer, Grievance x2): a loose field row carries group_visibility_conditions = [{
+   *  entity_id: ticket type id, entity_id2: field id, type 2, desc, seq, visibility_conditions: [{ lookup_field_id,
+   *  lookup_value_id, lookup_value, field_value -1, conditiontype 0, field_usage 0 }] }]. Sections: one example (Laptop
+   *  Request) with a different shape, not understood yet, so fields only. */
   visibility: {
     conditions: 'group_visibility_conditions' as string | null,
-    value: 'group_visibility_conditions_value' as string | null,
-    format: null as string | null,
+    groupType: 2 as number | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
   runbook: {
@@ -135,9 +145,15 @@ export const FEATURES: Feature[] = [
   },
   {
     key: 'ticket_rules',
-    name: 'ticket rules (routing and priority based on answers)',
+    name: 'ticket rules that route tickets to a team or agent',
     sections: ['ticketRule'],
-    prompt: `- ticket_rule: name, when: [{ ticket_type: ref } | { field: ref of a DROPDOWN field, equals: one of its options }] (all must match), then: { team?: ref, priority?: priority name from the inventory, agent?: ref }.`,
+    prompt: `- ticket_rule (runs when a ticket is logged): name, when: [{ ticket_type: ref } and/or { field: ref of a DROPDOWN field, equals: one of its options }] (all must match; include the ticket type unless the rule is meant for every type), then: { team?: ref, agent?: ref }. Check inventory.ticket_rules for one that already does it.`,
+  },
+  {
+    key: 'rule_priority',
+    name: 'ticket rules that set a priority',
+    sections: ['rulePriority'],
+    prompt: `- ticket_rule then may also have priority: a priority name from the inventory.`,
   },
   {
     key: 'child_tickets',
@@ -147,9 +163,9 @@ export const FEATURES: Feature[] = [
   },
   {
     key: 'visibility',
-    name: 'showing a section only for some answers',
+    name: 'showing a field only for some answers',
     sections: ['visibility'],
-    prompt: `- ticket_type set may have show_section_when: [{ group: field_group ref ON that form, field: ref of a DROPDOWN field on the form, equals: [its options] }]: the section shows only for those answers.`,
+    prompt: `- ticket_type set may have show_field_when: [{ field: ref of a field placed DIRECTLY on that form (not in a section), when: ref of a DROPDOWN field on the same form, equals: ONE of its options }]: the field shows only for that answer (V1). Add the field with add_fields first if it isn't on the form. Sections can't be made conditional yet.`,
   },
   {
     key: 'runbooks',
@@ -174,8 +190,9 @@ export function featuresOf(step: PlanStep): Feature[] {
   const keys = new Set<string>();
   if (step.object === 'email_template' || step.send_email || step.set?.send_email) keys.add('emails');
   if (step.object === 'ticket_rule') keys.add('ticket_rules');
+  if (step.then?.priority) keys.add('rule_priority');
   if (step.object === 'ticket_template') keys.add('child_tickets');
-  if (step.set?.show_section_when?.length) keys.add('visibility');
+  if (step.set?.show_field_when?.length) keys.add('visibility');
   return FEATURES.filter((f) => keys.has(f.key));
 }
 
@@ -510,7 +527,7 @@ export interface PlanStep {
     // outcome: email the requester when the button is pressed
     send_email?: string;
     // ticket_type: show a section only for some answers
-    show_section_when?: SectionCondition[];
+    show_field_when?: FieldCondition[];
     // email_template
     subject?: string;
     body?: string;
@@ -534,11 +551,11 @@ export interface PlanStep {
 
 export type RuleCondition = { ticket_type: string } | { field: string; equals: string };
 
-/** Show a section (field group ref) only when a dropdown field (ref) has one of these answers. */
-export interface SectionCondition {
-  group: string;
+/** Show `field` (ref, placed directly on the form) only when the dropdown `when` (ref) is `equals` (rule V1). */
+export interface FieldCondition {
   field: string;
-  equals: string[];
+  when: string;
+  equals: string;
 }
 
 /** A button on a workflow stage: on `step`, the action `via` (outcome ref) moves the ticket to `to_step`. */
@@ -674,8 +691,8 @@ function optionOf(ref: string, equals: string, refs: Refs, warn: (m: string) => 
 /** Point an action button at an email template (feature "emails"). */
 function setActionEmail(p: Row, templateRef: string, refs: Refs, warn: (m: string) => void) {
   const m = SPIKE_MAP.actionEmail;
-  if (!m.send || !m.template) return gap('an action\'s email', warn);
-  p[m.send] = true;
+  if (!m.send || !m.template || m.sendValue === null) return gap('an action\'s email (which sendemail number means send)', warn);
+  p[m.send] = m.sendValue;
   p[m.template] = refs[templateRef]?.id;
   if (!m.recipient || m.recipientRequester === null) return gap('who an action\'s email goes to', warn);
   p[m.recipient] = m.recipientRequester;
@@ -986,16 +1003,32 @@ export const translators: Record<PlanStep['object'], Translator> = {
         }
         out[m.fields as string] = rows;
       }
-      if (st.show_section_when?.length) {
-        // Feature "visibility": the condition sits on the section's row on this form (fieldid 0, groupid = section).
+      if (st.show_field_when?.length) {
+        // Rule V1: the condition sits on the field's own row on this form (shape: SPIKE_MAP.visibility evidence).
         const v = SPIKE_MAP.visibility;
         const rows = (out[m.fields as string] as Row[]) ?? keepRows(current[m.fields as string]);
-        for (const c of st.show_section_when) {
-          const row = rows.find((r) => Number(r.fieldid) === 0 && Number(r.groupid) === Number(refs[c.group]?.id));
-          if (!row) { warn(`show_section_when: section "${refs[c.group]?.name}" isn't on this form`); continue; }
-          const options = c.equals.map((e) => optionOf(c.field, e, refs, warn)).filter(Boolean);
-          if (!v.conditions || !v.value || !v.format) { gap('a section\'s show-when condition', warn); continue; }
-          row[v.conditions] = { field: refs[c.field]?.name, options: options.map((o) => o!.id) }; // replaced once the format is captured
+        const names = rowNames(current);
+        const onForm = (ref: string) => rows.find((r) => Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase()));
+        for (const c of st.show_field_when) {
+          const row = onForm(c.field);
+          if (!row) { warn(`show_field_when: "${refs[c.field]?.row?.label ?? refs[c.field]?.name}" isn't placed directly on this form (add it with add_fields; fields inside sections can't be conditional yet)`); continue; }
+          const inSection = ((current[m.fields as string] as Row[]) ?? []).some((r) => (((r.group as Row)?.fields as Row[]) ?? []).some((f) => Number(f.fieldid) === Number(refs[c.when]?.id)));
+          if (!onForm(c.when) && !inSection) { warn(`show_field_when: the dropdown "${refs[c.when]?.row?.label ?? refs[c.when]?.name}" isn't on this form, so the condition could never be met`); continue; }
+          const option = optionOf(c.when, c.equals, refs, warn);
+          if (!option || !v.conditions || v.groupType === null) continue;
+          const groups = ((row[v.conditions] as Row[]) ?? []).map((g) => ({ ...g }));
+          const same = (g: Row) => ((g.visibility_conditions as Row[]) ?? []).some((x) => Number(x.lookup_field_id) === Number(refs[c.when]?.id) && String(x.lookup_value_id) === String(option.id));
+          if (groups.some(same)) continue; // already there (re-run)
+          groups.push({
+            entity_id: Number(current.id),
+            entity_id2: refs[c.field]?.id,
+            entity_id3: 0,
+            type: v.groupType,
+            desc: `Condition Group ${groups.length + 1}`,
+            seq: groups.length + 1,
+            visibility_conditions: [{ tickettype_id: 0, field_id: 0, lookup_field_id: refs[c.when]?.id, lookup_value_id: option.id, lookup_value: option.name, field_value: -1, category_value_name: '', conditiontype: 0, field_usage: 0 }],
+          });
+          row[v.conditions] = groups;
         }
         out[m.fields as string] = rows;
       }
@@ -1006,7 +1039,20 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const m = SPIKE_MAP.ticketType;
       const out: string[] = [];
       for (const [k, v] of Object.entries(changes)) {
-        if (k === m.fields) out.push(...checkFieldRows(back[k], v, 'form'));
+        if (k === m.fields) {
+          out.push(...checkFieldRows(back[k], v, 'form'));
+          // V1: every condition we sent is on the field's row after saving.
+          const vk = SPIKE_MAP.visibility.conditions as string;
+          for (const r of v as Row[]) {
+            const want = ((r[vk] as Row[]) ?? []).filter((g) => !g.id);
+            if (!want.length) continue;
+            const got = ((back[k] as Row[]) ?? []).find((b) => Number(b.fieldid) === Number(r.fieldid) && Number(r.fieldid) > 0);
+            const have = ((got?.[vk] as Row[]) ?? []).flatMap((g) => (g.visibility_conditions as Row[]) ?? []);
+            for (const g of want) for (const c of (g.visibility_conditions as Row[]) ?? [])
+              if (!have.some((h) => Number(h.lookup_field_id) === Number(c.lookup_field_id) && String(h.lookup_value_id) === String(c.lookup_value_id)))
+                out.push(`form: field ${r.fieldid} has no condition "${c.lookup_value}" after saving`);
+          }
+        }
         else if (JSON.stringify(back[k]) !== JSON.stringify(v)) out.push(`${k} is ${JSON.stringify(back[k])}, wanted ${JSON.stringify(v)}`);
       }
       return out;
@@ -1201,6 +1247,10 @@ export const translators: Record<PlanStep['object'], Translator> = {
       set(p, m.name, step.name, 'email template name', warn);
       set(p, m.subject, step.subject ?? step.name, 'email subject', warn);
       set(p, m.body, toHtml(step.body ?? ''), 'email body', warn);
+      // The copied template's designer content and plain-text copy would otherwise still be the source's (Halo
+      // re-derives body_text from body_html: sample -100).
+      p.design = { design: '', html: p[m.body as string] };
+      delete p.body_text;
       return p;
     },
     update: (step, _refs, warn) => {
@@ -1214,30 +1264,47 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   ticket_rule: {
-    // Feature "ticket_rules". Evidence: probe 24 Oct (criteria, new_* keys). Shape from an existing rule.
+    // Feature "ticket_rules". Evidence: SPIKE_MAP.ticketRule. Shape from one of the instance's own ticket rules (use 0),
+    // with everything that rule did wiped first: a copy of "Downtime Started" would otherwise flag tickets as downtime.
     resource: 'TicketRules',
     template: 'template-ticketrule.json',
+    verifyCreate: (back) => (((back.criteria as Row[]) ?? []).length ? [] : ['ticket rule saved with no conditions: it would match every ticket']),
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-ticketrule.json'), 'TicketRules');
       const m = SPIKE_MAP.ticketRule;
       p.name = step.name;
+      p.use = 0; // a ticket rule, not an impact/urgency priority rule
+      p.active = true;
+      p.stopmatching = false;
+      // Wipe the source rule's own effects: every new_* back to "not set", no field setters, scripts, pop-ups or events.
+      for (const k of Object.keys(p)) {
+        if (!k.startsWith('new_')) continue;
+        p[k] = typeof p[k] === 'string' ? '' : k.endsWith('_status_id') ? 0 : -1;
+      }
+      Object.assign(p, { outcomes: [], outcome_id: 0, outcome_name: '', script_id: 0, script_name: '', popupmsg: '', events: [], olas: [], database_lookups: [], criteria_groups: [] });
       const criteria: Row[] = [];
       for (const c of step.when ?? []) {
         if ('ticket_type' in c) {
           if (!m.ticketTypeCriterion) { gap('a ticket rule condition on the ticket type', warn); continue; }
-          criteria.push({ [m.ticketTypeCriterion]: refs[c.ticket_type]?.id });
+          criteria.push({ tablename: 'faults', fieldname: m.ticketTypeCriterion, value_type: 'int', value_int: refs[c.ticket_type]?.id, value_string: '', partialmatch: false, matchseparatedvalues: false, type: 0 });
         } else {
-          if (!m.fieldCriteriaConfirmed) { gap('a ticket rule condition on a field (approval rules use type 23 rows; not confirmed for ticket rules)', warn); continue; }
+          if (!m.fieldCriteriaConfirmed) { gap('a ticket rule condition on a field', warn); continue; }
           const option = optionOf(c.field, c.equals, refs, warn);
           if (option) criteria.push(dropdownCriterion(String(refs[c.field]?.name ?? ''), option));
         }
       }
-      if (!step.when?.length) warn('ticket rule: no conditions, so it would match every ticket');
+      if (!criteria.length) warn('ticket rule: no conditions, so it would match every ticket');
       set(p, m.criteria, criteria, 'ticket rule conditions', warn);
       const t = step.then ?? {};
-      if (t.team) set(p, m.setTeam, refs[t.team]?.id, 'the team a rule sets', warn);
+      if (t.team) {
+        set(p, m.setTeam, refs[t.team]?.id, 'the team a rule sets', warn);
+        set(p, m.setTeamName, refs[t.team]?.name, 'the team a rule sets (name)', warn);
+      }
       if (t.agent) set(p, m.setAgent, refs[t.agent]?.id, 'the agent a rule sets', warn);
-      if (t.priority) set(p, m.setPriority, t.priority, 'the priority a rule sets', warn);
+      if (t.priority) {
+        const pm = SPIKE_MAP.rulePriority;
+        if (!pm.setPriority || !pm.priorityNumberKey) gap('the priority a rule sets (its number)', warn);
+      }
       if (!t.team && !t.agent && !t.priority) warn('ticket rule: sets nothing');
       return p;
     },
@@ -1294,7 +1361,7 @@ export function refsOf(step: PlanStep): string[] {
     ...(step.groups ?? []),
     step.send_email,
     step.set?.send_email,
-    ...(step.set?.show_section_when ?? []).flatMap((c) => [c.group, c.field]),
+    ...(step.set?.show_field_when ?? []).flatMap((c) => [c.field, c.when]),
     ...(step.when ?? []).map((c) => ('ticket_type' in c ? c.ticket_type : c.field)),
     step.then?.team,
     step.then?.agent,
