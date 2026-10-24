@@ -90,6 +90,12 @@ Add a rule every time Halo surprises us. Never remove one without proof it's no 
 | M3 | Never create a near-copy of an existing object (same name plus a suffix, "v2", "(copy)"): update the original. The planner's checks reject it. | Duplicate workflows, groups and ticket types on live instances | `plan.ts` validate |
 | M4 | The planner must not create objects nothing uses (an approval process kept "for later"), must reuse Halo's standard fields (symptom, risk, fbackoutplan) instead of adding look-alikes, must update an existing ticket type that already covers a requested one, and may only use priorities that exist on the instance's SLAs. | Unused approval, duplicate Risk/Backout fields, "Normal Change" next to Change Request, Urgent target skipped (G5) | `plan.ts` rules + validate |
 
+## Reading
+
+| # | Rule | Symptom it prevents | Where |
+|---|---|---|---|
+| R1 | Halo answers 504 (and can answer 429/502/503) when read hard, e.g. many detail GETs in parallel from a distant server. Retry reads with back-off (honour Retry-After), at most 4 at a time; never retry writes. Run the app in the same region as the customer's Halo where possible. | "Halo GET /api/Workflow/9 failed (504)" on the first in-app read (24 Oct) | `lib/halo.ts` haloGet, app `lib/specflow/halo.ts` |
+
 ## Build safety
 
 | # | Rule | Symptom it prevents | Where |

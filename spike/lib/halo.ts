@@ -92,8 +92,17 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, 
   return (text ? JSON.parse(text) : null) as T;
 }
 
-export function haloGet<T = unknown>(path: string, params?: Record<string, string>): Promise<T> {
-  return request<T>('GET', path, undefined, params);
+/** Reads retry on 429/502/503/504 with back-off (rule R1); writes never retry. */
+export async function haloGet<T = unknown>(path: string, params?: Record<string, string>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await request<T>('GET', path, undefined, params);
+    } catch (e) {
+      const status = Number(String((e as Error).message).match(/failed \((\d+)\)/)?.[1]);
+      if (![429, 502, 503, 504].includes(status) || attempt >= 4) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+    }
+  }
 }
 
 /** Every write goes through here. Refuses unless both safety switches in .env are set. */
