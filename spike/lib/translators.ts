@@ -338,6 +338,8 @@ export interface Translator {
   update?: (step: PlanStep, refs: Refs, warn: (msg: string) => void, current: Record<string, unknown>) => Record<string, unknown>;
   /** For action 'update': check the read-back. Returns problems; without it, scalar keys are compared. */
   verifyUpdate?: (back: Record<string, unknown>, changes: Record<string, unknown>, step: PlanStep, refs: Refs) => string[];
+  /** For action 'create': problems in the read-back beyond the name (e.g. a field that isn't a ticket field, rule F10). */
+  verifyCreate?: (back: Record<string, unknown>) => string[];
   build: (step: PlanStep, refs: Refs, warn: (msg: string) => void) => Record<string, unknown>;
 }
 
@@ -438,6 +440,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule F6 (2026-10-19): a field created via the API only works fully (dropdown options show)
     // after one real save. Create with a placeholder summary, then clear it: a real change, clean result.
     afterCreate: (id) => ({ id, summary: '' }),
+    verifyCreate: (back) => (Number(back.usage) === 1 ? [] : [`Field saved as usage ${back.usage}, not a ticket field (1): values typed on a form won't be stored (rule F10)`]),
     build: (step, _refs, warn) => {
       // Prefer a template of the same field type: each type carries its own defaults.
       // A text template made dropdowns with inputtype -1 and no load_type, and their options didn't show (2026-10-19).
@@ -448,6 +451,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.hint = '';
       p.summary = FIELD_SUMMARY_PLACEHOLDER; // cleared by afterCreate (rule F6)
       p.defaultvalue = '';
+      // Rule F10: always a ticket field, whatever the template was. usage 1010 (custom table) never stores ticket values.
+      p.usage = 1;
       delete p.defaultvalue_lookup; // e.g. "Standard Laptop" from the dropdown template
 
       const code = step.type ? SPIKE_MAP.fieldTypes[step.type] : null;

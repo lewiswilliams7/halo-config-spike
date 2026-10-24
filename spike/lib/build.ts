@@ -234,8 +234,11 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
 
         // Read back and check the name stuck: the cheapest proof it really saved.
         const back = firstRecord(await halo.get(`/${t.resource}/${created.id}`, { includedetails: 'true' }));
-        const ok = nameOf(back, t.nameKey) === expectedName;
-        if (!ok) warn(`Read-back mismatch: expected name "${expectedName}", got "${nameOf(back, t.nameKey)}"`);
+        const nameOk = nameOf(back, t.nameKey) === expectedName;
+        if (!nameOk) warn(`Read-back mismatch: expected name "${expectedName}", got "${nameOf(back, t.nameKey)}"`);
+        const extra = back && t.verifyCreate ? t.verifyCreate(back) : [];
+        for (const x of extra) warn(x);
+        const ok = nameOk && !extra.length;
 
         record({ outcome: 'created', id: created.id, payload });
         say(`+ ${label}  created id ${created.id}${ok ? ', verified' : ''}`);
