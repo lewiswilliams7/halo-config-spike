@@ -26,7 +26,8 @@
     "capture": "tsx spike/capture.ts",
     "repair:usage": "tsx spike/repair-field-usage.ts",
     "probe": "tsx spike/probe.ts",
-    "capture:next": "tsx spike/capture-next.ts"
+    "capture:next": "tsx spike/capture-next.ts",
+    "learn": "tsx spike/learn.ts"
   },
   "dependencies": {
     "dotenv": "16.4.5"

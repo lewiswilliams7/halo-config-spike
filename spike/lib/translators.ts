@@ -654,7 +654,7 @@ function set(payload: Record<string, unknown>, prop: string | null, value: unkno
 
 /** A gap in SPIKE_MAP: warn (so the dry run and rule B1 stop an apply) and leave the payload alone. */
 function gap(what: string, warn: (m: string) => void) {
-  warn(`SPIKE_MAP gap: don't know how Halo stores ${what} yet; needs a capture (npm run capture:next)`);
+  warn(`SPIKE_MAP gap: don't know how Halo stores ${what} yet; needs a learning run (npm run learn -- --apply)`);
 }
 
 /** A criteria row "dropdown field equals option" (rule P7 evidence: approvalprocessrule-5/6). */
