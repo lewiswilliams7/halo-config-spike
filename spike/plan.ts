@@ -42,6 +42,8 @@ const standardFields = [...new Set(
 )];
 const all = new Set([...Object.values(namesOnly).flatMap((v) => (Array.isArray(v) ? v : Object.keys(v ?? {}))), ...standardFields].map((n) => n.toLowerCase()));
 const slaPriorities = new Set(Object.values(inventory.details?.sla_targets ?? {}).flatMap((t) => String(t).split(', ').map((x) => x.replace(/ \S+$/, '').toLowerCase())));
+/** Priorities each existing SLA has, by SLA name (rule M10). */
+const slaPrioritiesOf = new Map(Object.entries(inventory.details?.sla_targets ?? {}).map(([n, t]) => [n.toLowerCase(), String(t).split(', ').map((x) => x.replace(/ \S+$/, '')).filter(Boolean)]));
 const wfActions = inventory.details?.workflow_actions_by_stage ?? {};
 /** Existing names per plan object, for the near-copy check. */
 const NAMES_BY_OBJECT: Record<string, string[]> = {
@@ -104,7 +106,7 @@ RULES
 - Fields: a requirement already met by a field on the form or in a section (standard Halo fields like symptom, risk or fbackoutplan count) is met: reuse that field and use field_mandatory to make it required. Never add a second field with the same meaning.
 - Ticket types: if an existing type already covers a requested type (e.g. "Change Request" for normal changes), update it; create a new type only for a genuinely separate one.
 - Workflow stages: match by meaning ("Implementing" = an existing "In Progress" stage). An inserted stage's enter_via must be an action NOT already on its after_step (inventory.details.workflow_actions_by_stage lists them); create a new action for it.
-- SLA targets: use only priority names that appear in inventory.details.sla_targets.
+- SLA targets: use only priority names that appear in inventory.details.sla_targets. A new SLA with targets must set based_on to an existing SLA that has EVERY priority you target (M10); give targets only for that SLA's priorities.
 - Every object you create must be used by a later step (an approval process attached to a ticket type, a field placed on a form...). Don't create things "for later": put that in questions.
 - The requester is the person writing the request. "me", "I", "my" mean them: their Halo agent is the one whose email (inventory.details.agent_emails) or name matches the requester. If none matches, ask.
 - A rule on a number (cost over £300, more than 10 users) is captured as its OWN new dropdown field holding only the bands ("Under £300", "£300 or more"), placed on the form. Never add band options to an existing field, and never mix the band into another answer ("Laptop (£300 or more)"). The rule itself (approve only when "£300 or more") goes in unsupported until conditional approvals are supported. (M5)
@@ -179,6 +181,17 @@ function validate(plan: Plan): string[] {
     for (const r of refsOf(s)) if (!seen.has(r)) errors.push(`${where}: uses "${r}" before it is defined`);
     for (const prio of Object.keys(s.targets ?? {}))
       if (slaPriorities.size && !slaPriorities.has(prio.toLowerCase())) errors.push(`${where}: SLA priority "${prio}" isn't on this instance's SLAs (${[...slaPriorities].join(', ')})`);
+    // Rule M10 (2026-10-24): a new SLA is copied from an existing one and can only set targets on the priorities THAT
+    // SLA has ("Urgent" existed on another SLA, not on the copied one, and the build stopped).
+    if (s.object === 'sla' && s.action === 'create' && s.targets && Object.keys(s.targets).length) {
+      const src = s.based_on ? slaPrioritiesOf.get(s.based_on.toLowerCase()) : undefined;
+      const options = [...slaPrioritiesOf].map(([n, ps]) => `"${n}" (${ps.join(', ')})`).join('; ');
+      if (!src) errors.push(`${where}: an SLA with per-priority targets needs based_on: an existing SLA that has every priority you target. Options: ${options}`);
+      else {
+        const missing = Object.keys(s.targets).filter((p) => !src.some((x) => x.toLowerCase() === p.toLowerCase()));
+        if (missing.length) errors.push(`${where}: "${s.based_on}" has no ${missing.map((x) => `"${x}"`).join(' or ')} priority (it has ${src.join(', ')}). Drop those targets, or base the SLA on one that has them. Options: ${options}`);
+      }
+    }
     if (baseWf && wfActions[baseWf]) {
       for (const ins of inserts) {
         const onStep = (wfActions[baseWf][ins.after_step] ?? []).map((a: string) => a.split(' → ')[0].toLowerCase());

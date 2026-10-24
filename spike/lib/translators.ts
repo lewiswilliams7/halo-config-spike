@@ -508,7 +508,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
           const row = rows?.find((r) => String(r.name).toLowerCase() === prio.toLowerCase());
           const t = String(target).match(/^(\d+(?:\.\d+)?)\s*([hd])$/i);
           if (!row || !t || !m.fixTime || !m.fixUnits) {
-            warn(`SLA target "${prio}: ${target}" skipped (unknown priority or format; use e.g. "4h" or "5d")`);
+            warn(!row
+              ? `The SLA this is copied from has no "${prio}" priority (it has ${(rows ?? []).map((r) => r.name).join(', ')}), so the ${target} target for ${prio} can't be set (rule M10)`
+              : `SLA target "${prio}: ${target}" isn't a time like "4h" or "5d"`);
             continue;
           }
           row[m.fixTime] = Number(t[1]);
