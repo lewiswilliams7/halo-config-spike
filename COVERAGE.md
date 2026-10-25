@@ -36,7 +36,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28 built and read back (requesttypenew + dropdown criteria, team, priority 2, nothing else) |
 | Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
-| Agent notifications on events | 🔒 | N1, N2. Built for 5 events; copied role subscriptions found in run 7 (fixed), re-proving in round 8. SLA breach events: ⬜ |
+| Agent notifications on events | ✅ | N1, N2. Notification 32 built and read back with only the agent asked for. 5 events mapped; SLA breach events: ⬜ |
 | Priority matrix (impact x urgency) | ✅ | TR3. Matrix rule 29 (use 2, impact 1, urgency 2, priority 2) built and read back |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
 | Service catalogue (services, portal request types) | ⬜ | |

@@ -159,9 +159,10 @@ export const SPIKE_MAP = {
    *  name: 2 new ticket logged to a team, 6 P1 ticket logged, 17 ticket updated by the user, 33 ticket re-assigned,
    *  1008 mention. Whether agents can be subscribed without a role: learn round 7. */
   notification: {
-    /** Learning run 7: notification 31 subscribed 8 agents through copied roles (N2); re-proved in round 8. */
+    /** Learning run 7: notification 31 subscribed 8 agents through copied roles (N2). Run 8: notification 32 reached
+     *  only the agent asked for, no roles. */
     events: { new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
-    provenOnTrial: null as boolean | null,
+    provenOnTrial: true as boolean | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
   runbook: {
