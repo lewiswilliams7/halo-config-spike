@@ -36,7 +36,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28; ticket 4022 (6 or more) went to 1st Line Support at priority 2, ticket 4023 (1) didn't |
 | Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
-| Agent notifications on events | 🔒 | N1-N3. Builds and subscribes the right agents (notification 32), but off until conditions (ticket type) and team recipients are learned: unscoped, it fires for every ticket |
+| Agent notifications on events | ✅ | N1-N5. Notification 35: new ticket, Software Licensing Requests in the Software Licensing team, members told; Kaleem received it. The agent who logs the ticket isn't alerted. SLA breach events: ⬜ |
 | Priority matrix (impact x urgency) | ✅ | TR3. Matrix rule 29 (use 2, impact 1, urgency 2, priority 2) built and read back |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
 | Service catalogue (services, portal request types) | ⬜ | |

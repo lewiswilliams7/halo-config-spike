@@ -174,8 +174,10 @@ export const SPIKE_MAP = {
     teamRecipient: 'team_id' as string | null,
     /** Rule N5 (Lewis, 25 Oct): team_id only FILTERS which tickets count; nobody is told unless subscribed. Notification
      *  34 (team Software Licensing, no agents) sent nothing on event 2 or 3. So the team's members are subscribed as
-     *  agents (direct subscriptions work: notification 32) and team_id stays as the filter. Proof pending (round 13). */
-    teamMeaningChecked: null as boolean | null,
+     *  agents (direct subscriptions work: notification 32) and team_id stays as the filter. Round 13: notification 35
+     *  built and read back (event 3, team filter, ticket type condition, Kaleem + Lewis direct); Kaleem received the
+     *  new-request alert (Lewis, 25 Oct). Halo doesn't alert the agent who logged the ticket. */
+    teamMeaningChecked: true as boolean | null,
     provenOnTrial: true as boolean | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
