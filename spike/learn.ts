@@ -4,6 +4,10 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 16 (25 Oct): emails at work. Enact logs its own sample ticket (filling the type's required fields), moves it to
+ * the sample status, and reads every action Halo logged (acknowledgement EM4, status email EM3). Variables re-read from
+ * subjects and HTML only, as whole words (EM2: round 15's plain-text read glued words on). Sample template 46 gets
+ * the ticket type's own team (C2).
  * Round 15 (25 Oct): branded emails (does Halo keep Enact's layout: rule EM1), the $variables Halo's own templates use
  * (EM2), status emails set on the status (EM3), and a sample ticket Enact logs and moves itself, to read which emails
  * Halo logged for the acknowledgement (EM4) and the status change.
@@ -30,7 +34,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 15, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 16, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -203,21 +207,23 @@ if (apply) {
       note(area, 'ticket type acknowledgement failed', err(e));
     }
   }
-  // Round 15 (EM3): status emails live on the status. Try each setting on the sample status, one at a time.
+  // Round 15 (EM3) found Halo keeps statusemailid, notifystatuschange and nochangetemplate on the sample status.
   const zStatus = (await list('Status')).find((x) => String(x.name) === `${SAMPLE} status`);
-  note(area, 'a status in full (Ready for UAT, Halo\'s own)', await detail('Status', statuses.find((x) => /ready for uat/i.test(nameOf(x)))?.id ?? 29));
-  if (zStatus && zEmail) {
-    for (const [label, body] of [
-      ['statusemailid', { statusemailid: zEmail.id }],
-      ['notifystatuschange 1', { notifystatuschange: 1 }],
-      ['nochangetemplate', { nochangetemplate: zEmail.id }],
-    ] as [string, Row][]) {
-      try {
-        await haloPost('/Status', [{ id: zStatus.id, ...body }]);
-        note(area, `status: ${label}`, pick(await detail('Status', zStatus.id), /mail|template|notify|send|freq/i));
-      } catch (e) {
-        note(area, `status: ${label} failed`, err(e));
+  note(area, 'sample status now', zStatus ? pick(await detail('Status', zStatus.id), /mail|template|notify|send|freq|nochange/i) : 'not found');
+
+  // C2 on the old sample: template 46 predates C2 and still sends tickets to Human Resources.
+  const zt46 = types.find((t) => String(t.name) === `${SAMPLE} request`);
+  if (zt46) {
+    try {
+      const ttd = await detail('TicketType', zt46.id);
+      const tplId = Number(ttd?.overridewiththefollowingtemplatewhenloggingmanually ?? 0);
+      if (tplId > 0) {
+        const team = String(ttd?.default_team ?? ttd?.team_name ?? '');
+        await haloPost('/Template', [{ id: tplId, team }]);
+        note(area, 'sample template team (C2 repair)', { template: tplId, set_to: team, now: pick(await detail('Template', tplId), /^(team|team_id)$/) });
       }
+    } catch (e) {
+      note(area, 'sample template team repair failed', err(e));
     }
   }
 
@@ -240,36 +246,67 @@ if (apply) {
     };
   });
 
-  // Round 15 (EM4 + status emails at work): Enact logs a sample ticket on the sample type, moves it to the sample
-  // status, then reads every action Halo logged on it.
+  // Round 16 (EM4 + EM3 at work): Enact logs a sample ticket on the sample type, filling the type's required fields,
+  // moves it to the sample status, then reads every action Halo logged on it.
   const zType = types.find((t) => String(t.name) === `${SAMPLE} request`);
   const users = await list('Users', { count: '50' });
   const requester = users.find((u) => /lewis/i.test(String(u.emailaddress ?? u.name ?? ''))) ?? users.find((u) => String(u.emailaddress ?? '').includes('@'));
+  const actionsOf = async (tid: unknown) => extractList(await haloGet('/Actions', { ticket_id: String(tid), excludesys: 'false' }));
+  const actionView = (a: Row) => pick(a, /^(id|outcome|who|note|emailto|emailcc|emailfrom|emailsubject|emailtonew|datetime|actionby_agent_id|sendemail|outcome_id|new_status|new_status_name|actisemail|actionarrivaldate|actioncompletiondate)$/i);
   if (zType && zStatus && requester) {
+    let tid: unknown = null;
     try {
-      const made = firstRecord(await haloPost('/Tickets', [{ tickettype_id: zType.id, summary: `${SAMPLE} email check`, details: 'Logged by Enact learn round 15 to check acknowledgement and status emails.', user_id: requester.id }]));
-      const tid = made?.id;
-      await new Promise((r) => setTimeout(r, 8000));
-      await haloPost('/Tickets', [{ id: tid, status_id: zStatus.id }]);
-      await new Promise((r) => setTimeout(r, 8000));
-      const acts = extractList(await haloGet('/Actions', { ticket_id: String(tid), excludesys: 'false' }));
-      note(area, 'sample ticket', { id: tid, requester: { id: requester.id, name: requester.name, email: requester.emailaddress }, status_now: pick(await detail('Tickets', tid), /^status/) });
-      note(area, 'every action Halo logged on it', acts.map((a) => pick(a, /^(id|outcome|who|note|emailto|emailfrom|emailsubject|emailtonew|datetime|actionby|sendemail|outcome_id|new_status|actisemail|emailbody)/i)));
-      note(area, 'action keys', acts[0] ? Object.keys(acts[0]) : []);
-      summary.push(`· sample ticket ${tid} logged and moved; ${acts.length} actions read`);
+      const ttd = await detail('TicketType', zType.id);
+      const required = ((ttd?.fields as Row[]) ?? []).filter((r) => Number(r.fieldid) > 0 && (Number(r.technew) === 3 || Number(r.endusernew) === 3));
+      const customfields: Row[] = [];
+      for (const r of required) {
+        const f = await detail('FieldInfo', r.fieldid);
+        if (!f || !String(f.name ?? '').startsWith('CF')) continue;
+        const t = Number(f.type);
+        const first = ((f.values as Row[]) ?? [])[0];
+        const value = t === 2 || t === 3 ? first?.id : t === 4 ? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10) : t === 6 ? true : 'Enact learn round 16';
+        customfields.push({ name: f.name, value });
+      }
+      note(area, 'required fields filled', customfields);
+      const made = firstRecord(await haloPost('/Tickets', [{ tickettype_id: zType.id, summary: `${SAMPLE} email check`, details: 'Logged by Enact learn round 16 to check acknowledgement and status emails.', user_id: requester.id, customfields }]));
+      tid = made?.id;
+      note(area, 'sample ticket', { id: tid, requester: { id: requester.id, name: requester.name, email: requester.emailaddress } });
     } catch (e) {
       note(area, 'sample ticket failed', err(e));
+    }
+    // If logging failed, still test the status email on the newest sample ticket of that type.
+    const target = tid ?? recent.find((t) => Number(t.tickettype_id) === Number(zType.id) && Number(t.parent_id ?? 0) === 0)?.id;
+    if (target) {
+      try {
+        await new Promise((r) => setTimeout(r, 8000));
+        const before = (await actionsOf(target)).map(actionView);
+        await haloPost('/Tickets', [{ id: target, status_id: zStatus.id }]);
+        await new Promise((r) => setTimeout(r, 10000));
+        const after = await actionsOf(target);
+        note(area, 'actions after logging', { ticket: target, actions: before });
+        note(area, 'actions after moving to the sample status', { ticket: target, status_now: pick(await detail('Tickets', target), /^status/), actions: after.map(actionView) });
+        note(area, 'action keys', after[0] ? Object.keys(after[0]) : []);
+        summary.push(`· sample ticket ${target}: ${before.length} actions after logging, ${after.length} after the status change`);
+      } catch (e) {
+        note(area, 'status change failed', err(e));
+      }
     }
   }
 }
 
-// Round 15 (EM2): every $variable Halo's own email templates use.
-const vars = new Map<string, number>();
+// Round 16 (EM2): every $variable in Halo's own templates' subjects and HTML, as whole words, case kept.
+const vars = new Map<string, { count: number; seen: string }>();
 for (const t of tpls) {
   const d = await detail('EmailTemplate', t.id);
-  for (const v of variablesIn([d?.header_text, d?.body_html, d?.body_text].map((x) => String(x ?? '')).join(' '))) vars.set(v.toUpperCase(), (vars.get(v.toUpperCase()) ?? 0) + 1);
+  const text = [d?.header_text, d?.body_html].map((x) => String(x ?? '')).join(' \n ');
+  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])/g)) {
+    const k = `$${m[1]}`;
+    const v = vars.get(k) ?? { count: 0, seen: text.slice(Math.max(0, (m.index ?? 0) - 25), (m.index ?? 0) + k.length + 25).replace(/\s+/g, ' ') };
+    v.count += 1;
+    vars.set(k, v);
+  }
 }
-note('requester emails', 'variables used in Halo\'s own templates (upper-cased, times seen)', Object.fromEntries([...vars].sort((a, b) => b[1] - a[1])));
+note('requester emails', 'variables in Halo\'s own templates (subjects and HTML, whole words)', Object.fromEntries([...vars].sort((a, b) => b[1].count - a[1].count)));
 note('requester emails', 'templates read for variables', tpls.length);
 summary.push(`· ${vars.size} different $variables across ${tpls.length} email templates`);
 

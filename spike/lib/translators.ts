@@ -76,10 +76,11 @@ export const SPIKE_MAP = {
     body: 'body_html' as string | null,
     name: 'name' as string | null,
   },
-  /** Branded emails (rule EM1): does Halo keep Enact's table layout, inline styles, logo <img> and the data-enact-brand
-   *  marker as sent? Unknown until learn round 15 reads a branded sample back. Until then branding stays off. */
+  /** Branded emails (rule EM1). Evidence: learning run 15, sample -106 built by the builder: Halo kept the table layout,
+   *  inline styles, logo <img>, data-enact-brand marker and $variables exactly as sent (1,216 of 1,216 characters,
+   *  design.html the same). */
   emailBrand: {
-    keptByHalo: null as boolean | null,
+    keptByHalo: true as boolean | null,
   },
   /** Halo $variables (rule EM2), case-insensitive. Filled from the variables Halo's OWN templates use (learn round 15),
    *  never from a guess. While null, the planner gets the three seen so far and nothing is refused. */

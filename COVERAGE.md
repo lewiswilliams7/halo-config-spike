@@ -33,7 +33,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Area | Status | Notes |
 |---|---|---|
 | Email templates, and emails sent from an action | ✅ | E1, O4. Built by the builder on gethandoveruk (template -103, action 107), read back exactly. Delivery to be seen in the UI. Emails on events (notifications): ⬜ |
-| Branded email layout (logo, colour, footer) | 🔒 | EM1. Built and previewed; off until round 15 shows Halo keeps the layout. |
+| Branded email layout (logo, colour, footer) | ✅ | EM1. Sample -106 built by the builder and kept exactly (run 15). Per client instance in the app, with a preview. |
 | Halo $variables checked against Halo's own templates | 🔒 | EM2. Check built; list filled by round 15. |
 | Acknowledgement email on a ticket type | ⬜ | EM4. Setting kept (round 14); email going out to be seen (round 15). Not in the builder yet. |
 | Email to the requester on a status change | ⬜ | EM3. Set on the status, not the template; round 15 tries the status keys. |
