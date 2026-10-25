@@ -35,7 +35,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Email templates, and emails sent from an action | ✅ | E1, O4. Built by the builder on gethandoveruk (template -103, action 107), read back exactly. Delivery to be seen in the UI. Emails on events (notifications): ⬜ |
 | Branded email layout (logo, colour, footer) | ✅ | EM1. Sample -106 built by the builder and kept exactly (run 15). Per client instance in the app, with a preview. |
 | Halo $variables checked against Halo's own templates | ✅ | EM2. 97 variables read from the trial's own templates (run 16); plans using others fail the checks. |
-| Acknowledgement email on a ticket type | ⬜ | EM4. Setting kept (round 14); email going out to be seen (round 15). Not in the builder yet. |
+| Acknowledgement email on a ticket type | ✅ | EM4, EM5. Kept (run 14), queued on a logged ticket (run 17), delivered once the sending agent was verified. `set.acknowledgement_email`. |
 | Email to the requester on a status change | ⬜ | EM3. Set on the status, not the template; round 15 tries the status keys. |
 | Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28; ticket 4022 (6 or more) went to 1st Line Support at priority 2, ticket 4023 (1) didn't |
 | Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |

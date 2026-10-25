@@ -4,6 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 18 (25 Oct): status emails. The sample status keeps only statusemailid + notifystatuschange (nochangetemplate
+ * back to -1), Enact logs a sample ticket and moves it there, then looks for Halo's background queue (where run 17's
+ * acknowledgement record was) to see which emails were queued for that ticket.
  * Round 17 (25 Oct): the sample ticket again, filling whatever Halo says is mandatory (by label), the ticket's own
  * requester and their email address, and where Halo keeps sent emails (mailboxes, queue endpoints), so we can tell
  * "no email sent" from "sent but not logged as an action".
@@ -37,7 +40,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 17, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 18, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -214,6 +217,17 @@ if (apply) {
   const zStatus = (await list('Status')).find((x) => String(x.name) === `${SAMPLE} status`);
   note(area, 'sample status now', zStatus ? pick(await detail('Status', zStatus.id), /mail|template|notify|send|freq|nochange/i) : 'not found');
 
+  // Round 18: one key off at a time. nochangetemplate (with statusnochangehours) is the "unchanged for N hours" email,
+  // so it goes back to -1; statusemailid + notifystatuschange stay, to see if entering the status queues an email.
+  if (zStatus) {
+    try {
+      await haloPost('/Status', [{ id: zStatus.id, nochangetemplate: -1 }]);
+      note(area, 'sample status for this run', pick(await detail('Status', zStatus.id), /^(statusemailid|statusemailname|notifystatuschange|nochangetemplate|statusemailfreqdays)$/));
+    } catch (e) {
+      note(area, 'sample status reset failed', err(e));
+    }
+  }
+
   // C2 on the old sample: template 46 predates C2 and still sends tickets to Human Resources.
   const zt46 = types.find((t) => String(t.name) === `${SAMPLE} request`);
   if (zt46) {
@@ -310,6 +324,18 @@ if (apply) {
         note(area, 'actions after moving to the sample status', { ticket: target, status_now: pick(await detail('Tickets', target), /^status/), actions: after.map(actionView) });
         note(area, 'action keys', after[0] ? Object.keys(after[0]) : []);
         summary.push(`· sample ticket ${target}: ${before.length} actions after logging, ${after.length} after the status change`);
+        // Halo's background queue: run 17's record (retry_attempts_remaining, system_use, error) came from here.
+        const queue: Row = {};
+        for (const ep of ['PendingAutomation', 'AutomationQueue', 'BackgroundTask', 'BackgroundTasks', 'ProcessQueue', 'TaskQueue', 'EventQueue', 'Queue', 'IntegratorQueue', 'Pending', 'EmailEvents', 'TicketEvent', 'Events']) {
+          try {
+            const rows = extractList(await haloGet(`/${ep}`, { ticket_id: String(target), count: '50' }));
+            const mine = rows.filter((r) => String(r.ticket_id ?? '') === String(target));
+            queue[ep] = { rows: rows.length, for_ticket: mine.map((r) => pick(r, /^(id|timestamp|ticket_id|status|error|system_use|system_use2|execution_type|execute_outcome_id|date_processed)$/)), keys: rows[0] ? Object.keys(rows[0]).slice(0, 25) : [] };
+          } catch (e) {
+            queue[ep] = err(e).slice(0, 80);
+          }
+        }
+        note(area, 'background queue for the sample ticket', queue);
       } catch (e) {
         note(area, 'status change failed', err(e));
       }

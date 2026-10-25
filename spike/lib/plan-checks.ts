@@ -239,6 +239,14 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     }
   }
 
+  // EM4: an acknowledgement email is an email template, set on a ticket type.
+  for (const s of steps) {
+    const ack = s.set?.acknowledgement_email;
+    if (!ack) continue;
+    if (s.object !== 'ticket_type') errors.push(`step "${s.id}": acknowledgement_email only works on a ticket type`);
+    if (steps.find((x) => x.id === ack)?.object !== 'email_template') errors.push(`step "${s.id}": acknowledgement_email must be an email_template step (got "${ack}")`);
+  }
+
   // V1: a conditional field tests a dropdown's answer; the field and the dropdown must be on that form.
   for (const s of steps) {
     for (const c of s.set?.show_field_when ?? []) {

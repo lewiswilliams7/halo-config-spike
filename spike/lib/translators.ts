@@ -85,6 +85,13 @@ export const SPIKE_MAP = {
   /** Halo $variables (rule EM2), case-insensitive. Evidence: learning run 16, every whole-word $variable in the subjects
    *  and HTML of the instance's 94 email templates (97 distinct). Meanings in `common` are from how Halo's own templates
    *  use them ("Hi $firstname,", "Logged $DATEOCCURED", "changed to $status", "Technician Assigned: $assignedto"). */
+  /** Acknowledgement email on a ticket type (rule EM4). Evidence: run 14, type 70 kept acknowledgementtemplate -103; run 17,
+   *  Halo queued that email one second after ticket 4031 was logged through the API (queue record 13). It goes out
+   *  only when the sending agent's account is verified (EM5). acknowledgementtemplateooh is the out-of-hours one. */
+  ackEmail: {
+    key: 'acknowledgementtemplate' as string | null,
+    provenOnTrial: true as boolean | null,
+  },
   emailVariables: {
     known: [
       '$ORNAME', '$FAULTID', '$SYMPTOM', '$ORPHONE', '$ORWEBSITE', '$LINKTOREQUESTUSER', '$CURRENTDATE',
@@ -292,6 +299,12 @@ export const FEATURES: Feature[] = [
     prompt: `- ticket_type set may have show_field_when: [{ field: ref of a field placed DIRECTLY on that form (not in a section), when: ref of a DROPDOWN field on the same form, equals: ONE of its options }]: the field shows only for that answer (V1). Add the field with add_fields first if it isn't on the form. Sections can't be made conditional yet.`,
   },
   {
+    key: 'acknowledgement',
+    name: 'acknowledgement emails when a ticket is logged',
+    sections: ['ackEmail'],
+    prompt: `- ticket_type set may have acknowledgement_email: ref of an email_template step: Halo emails the requester that template as soon as a ticket of that type is logged (EM4). For a NEW ticket type, add an update step after creating it. Halo only sends it if the agent account it sends as is verified (EM5): say so in assumptions. Emails when the status changes aren't supported yet.`,
+  },
+  {
     key: 'email_branding',
     name: 'branded email layouts (logo, colour and footer)',
     sections: ['emailBrand'],
@@ -334,6 +347,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'ticket_template') keys.add('child_tickets');
   if (step.set?.show_field_when?.length) keys.add('visibility');
   if (step.brand) keys.add('email_branding');
+  if (step.set?.acknowledgement_email) keys.add('acknowledgement');
   return FEATURES.filter((f) => keys.has(f.key));
 }
 
@@ -674,6 +688,8 @@ export interface PlanStep {
     send_email?: string;
     // ticket_type: show a section only for some answers
     show_field_when?: FieldCondition[];
+    /** ticket_type: ref of an email_template step, emailed to the requester when a ticket is logged (EM4). */
+    acknowledgement_email?: string;
     // ticket_rule: change the priority an existing rule sets (e.g. a priority matrix cell)
     priority?: number | string;
     // email_template
@@ -1188,6 +1204,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
         }
         out[m.fields as string] = rows;
       }
+      if (st.acknowledgement_email) {
+        // Rule EM4: the template's id on the ticket type. EM5 (verified sending agent) is said in the plan, not checked here.
+        const key = SPIKE_MAP.ackEmail.key;
+        const id = refs[st.acknowledgement_email]?.id;
+        if (!key) warn('SPIKE_MAP gap: acknowledgement email key unknown');
+        else if (id === undefined || id === null) warn(`acknowledgement_email: "${st.acknowledgement_email}" has no email template id yet`);
+        else if (Number(current[key]) !== Number(id)) out[key] = id;
+      }
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
@@ -1673,6 +1697,7 @@ export function refsOf(step: PlanStep): string[] {
     step.send_email,
     step.set?.send_email,
     ...(step.set?.show_field_when ?? []).flatMap((c) => [c.field, c.when]),
+    step.set?.acknowledgement_email,
     ...(step.when ?? []).map((c) => ('ticket_type' in c ? c.ticket_type : 'field' in c ? c.field : undefined)),
     step.then?.team,
     step.then?.agent,
