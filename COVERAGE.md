@@ -34,7 +34,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 |---|---|---|
 | Email templates, and emails sent from an action | ✅ | E1, O4. Built by the builder on gethandoveruk (template -103, action 107), read back exactly. Delivery to be seen in the UI. Emails on events (notifications): ⬜ |
 | Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28 built and read back (requesttypenew + dropdown criteria, team, priority 2, nothing else) |
-| Child tickets raised when a ticket is logged | 🔒 | C1. Built from templates 1 and 30; switched on once learn round 3 proves inline children. In order / on approval: ⬜ |
+| Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
 | Escalation and SLA breach notifications | ⬜ | |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |

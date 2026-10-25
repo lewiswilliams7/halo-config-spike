@@ -117,8 +117,8 @@ export const SPIKE_MAP = {
     parentType: 1 as number | null,
     childType: 6 as number | null,
     attach: 'overridewiththefollowingtemplatewhenloggingmanually' as string | null,
-    /** Run 4 proved the parts by hand-shaped posts; the builder's own run of C1 is pending (learn round 5). */
-    provenOnTrial: null as boolean | null,
+    /** Learning run 5: the builder made template 46 with children 47, 48 and pointed ticket type 70 at it, all verified. */
+    provenOnTrial: true as boolean | null,
   },
   /** Show a field only for some answers. Evidence: learn, five form rows on gethandoveruk (Absence Management, Employee
    *  Information Change, Employee Transfer, Grievance x2): a loose field row carries group_visibility_conditions = [{
