@@ -162,6 +162,10 @@ export const SPIKE_MAP = {
     /** Learning run 7: notification 31 subscribed 8 agents through copied roles (N2). Run 8: notification 32 reached
      *  only the agent asked for, no roles. */
     events: { new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
+    /** Off again (25 Oct, Lewis): a notification with no conditions fires for EVERY matching ticket, and consultants
+     *  notify a team, not named agents. Conditions (e.g. ticket type) and team recipients aren't known yet (N3). */
+    conditions: null as string | null,
+    teamRecipient: null as string | null,
     provenOnTrial: true as boolean | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */

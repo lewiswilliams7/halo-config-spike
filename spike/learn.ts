@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 8 (25 Oct): an agent notification reaches only the agents asked for (N2). Earlier proofs re-run as a
- * regression check (nothing to change).
+ * Round 9 (25 Oct): reads recent tickets to check what the builds actually did (team, priority, category, child
+ * tickets), and learns notification conditions and team recipients. Earlier proofs re-run as a regression check.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -136,23 +136,45 @@ if (apply && team) {
 
 // Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
 const assigning: Row[] = [];
-// ---------- 3. round 8: an agent notification reaches only the agents asked for (N2) ----------
-if (apply) {
-  const agents = await list('Agent');
-  const me = agents.find((a) => /lewis/i.test(nameOf(a))) ?? agents.find((a) => Number(a.id) > 1 && !/\(ai\)/i.test(nameOf(a)));
-  if (me) {
-    await prove('notification to one agent only', {
-      request: 'Enact learning run 8',
-      steps: [
-        { id: 'me', object: 'agent', action: 'reuse', match: { name: nameOf(me) } },
-        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 2`, event: 'p1_logged', by: 'popup', agents: ['me'] },
-      ],
-    }, async (log) => {
-      const n = await detail('Notification', idOf(log, 'n'));
-      return { agents: ((n?.agents as Row[]) ?? []).map((a) => `${a.agent_name} (${a.role_name || 'direct'})`), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), eventno: n?.eventno };
-    });
-  }
+// ---------- 3. round 9: check what the builds DO on real tickets, and learn notification conditions and teams ----------
+// What the samples should have done to tickets logged since (read back from the tickets themselves, not the UI).
+const recent = extractList(await haloGet('/Tickets', { pageinate: 'true', page_size: '40', page_no: '1', order: 'id', orderdesc: 'true' }).catch(() => ({})));
+const typeName = new Map(types.map((t) => [Number(t.id), nameOf(t)]));
+const wanted = new Set(['Software Licensing Request', `${SAMPLE} request`, `${SAMPLE} request 2`]);
+const seen: Row[] = [];
+for (const t of recent) {
+  const tt = typeName.get(Number(t.tickettype_id)) ?? String(t.tickettype_id);
+  if (!wanted.has(tt) && Number(t.parent_id ?? 0) === 0) continue;
+  const d = await detail('Tickets', t.id);
+  if (!d) continue;
+  seen.push({
+    id: d.id, ticket_type: typeName.get(Number(d.tickettype_id)) ?? d.tickettype_id, summary: d.summary, team: d.team, priority_id: d.priority_id,
+    category_1: d.category_1, parent_id: d.parent_id, child_count: d.child_count ?? d.children_count, dateoccurred: d.dateoccurred,
+    licences: ((d.customfields as Row[]) ?? []).filter((c) => /licen/i.test(String(c.name))).map((c) => c.display ?? c.value),
+  });
+  if (seen.length >= 15) break;
 }
+note('tickets', 'recent sample-related tickets (what the builds did)', seen);
+note('tickets', 'keys on a ticket (first)', recent[0] ? Object.keys(recent[0]) : []);
+summary.push(`· tickets: ${seen.length} recent sample-related tickets read`);
+
+// Notification conditions: runbook triggers are notification records with conditions (Webhook events, condition_count 1-2).
+const hooks = await list('Webhook');
+const withConditions: Row[] = [];
+for (const h of hooks) {
+  const d = await detail('Webhook', h.id);
+  for (const ev of ((d?.events as Row[]) ?? []).filter((e) => Number(e.condition_count) > 0)) {
+    const full = await detail('Notification', ev.id);
+    if (full) withConditions.push({ webhook: nameOf(h), id: ev.id, name: full.name, eventno: full.eventno, type: full.type, filter_type: full.filter_type, conditions: full.conditions, team_name: full.team_name, rule_id: full.rule_id });
+    if (withConditions.length >= 4) break;
+  }
+  if (withConditions.length >= 4) break;
+}
+note('notifications', 'events with conditions (from runbook triggers)', withConditions);
+// All notifications in full again, for recipient types (type, team_name, user_id, roles).
+const allNotes = await list('Notification');
+note('notifications', 'recipient settings', (await Promise.all(allNotes.slice(0, 30).map((n) => detail('Notification', n.id)))).filter(Boolean).map((d) => pick(d, /^(id|name|type|eventno|delivery_method|team_name|team_id|agent_id|user_id|filter_type|rule_id|condition_count)$/)));
+summary.push(`· notifications: ${withConditions.length} with conditions found`);
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(file, JSON.stringify(out, null, 2));
