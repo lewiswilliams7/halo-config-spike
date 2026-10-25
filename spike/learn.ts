@@ -4,6 +4,10 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 19 (25 Oct): approvals that depend on an answer (P7) at work. The builder makes a sample Yes/No dropdown, a
+ * sample IT Security approval group (the API's own agent) and a sample approval process whose only stage is the rule
+ * "admin rights = Yes: IT Security approves", and puts both on the sample ticket type. Enact then logs one ticket
+ * answering Yes and one answering No, and reads back each ticket's approval state.
  * Round 18 (25 Oct): status emails. The sample status keeps only statusemailid + notifystatuschange (nochangetemplate
  * back to -1), Enact logs a sample ticket and moves it there, then looks for Halo's background queue (where run 17's
  * acknowledgement record was) to see which emails were queued for that ticket.
@@ -40,7 +44,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 18, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 19, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -263,81 +267,94 @@ if (apply) {
     };
   });
 
-  // Round 16 (EM4 + EM3 at work): Enact logs a sample ticket on the sample type, filling the type's required fields,
-  // moves it to the sample status, then reads every action Halo logged on it.
+  // Round 19 (P7 at work): a conditional approval stage, built by the real builder, then two tickets, one each way.
   const zType = types.find((t) => String(t.name) === `${SAMPLE} request`);
   const users = await list('Users', { count: '50' });
   const requester = users.find((u) => /lewis/i.test(String(u.emailaddress ?? u.name ?? ''))) ?? users.find((u) => String(u.emailaddress ?? '').includes('@'));
-  const actionsOf = async (tid: unknown) => extractList(await haloGet('/Actions', { ticket_id: String(tid), excludesys: 'false' }));
-  const actionView = (a: Row) => pick(a, /^(id|outcome|who|note|emailto|emailcc|emailfrom|emailsubject|emailtonew|datetime|actionby_agent_id|sendemail|outcome_id|new_status|new_status_name|actisemail|actionarrivaldate|actioncompletiondate)$/i);
-  if (zType && zStatus && requester) {
-    let tid: unknown = null;
-    // Halo names what's mandatory only in its refusal ("Why is this needed? is mandatory"), so fill by label and retry.
+  const agents = await list('Agent');
+  const me = agents.find((a) => Number(a.id) === 3) ?? agents.find((a) => /lewis/i.test(nameOf(a)));
+  const ddName = 'CFzzEnactSampleAdminRights';
+  if (zType && requester && me) {
+    await prove('approval that depends on an answer', {
+      request: 'Enact learning run 19',
+      steps: [
+        { id: 'zt', object: 'ticket_type', action: 'reuse', match: { name: `${SAMPLE} request` } },
+        { id: 'me', object: 'agent', action: 'reuse', match: { name: nameOf(me) } },
+        { id: 'dd', object: 'field', action: 'create', name: ddName, label: `${SAMPLE} admin rights`, type: 'dropdown', options: ['Yes', 'No'] },
+        { id: 'grp', object: 'approval_group', action: 'create', name: `${SAMPLE} IT Security`, members: ['me'], approvals_needed: 1 },
+        { id: 'ap', object: 'approval_process', action: 'create', name: `${SAMPLE} conditional approval`, based_on: 'Line Manager Approval Process', approvers: [{ rules: [{ field: 'dd', equals: 'Yes', group: 'grp' }] }] },
+        { id: 'form', object: 'ticket_type', action: 'update', match: { name: `${SAMPLE} request` }, set: { add_fields: [{ ref: 'dd' }], approval: 'ap' } },
+      ],
+    } as Plan, async (log) => {
+      const ap = await detail('ApprovalProcess', idOf(log, 'ap'));
+      return {
+        process: pick(ap, /^(id|name|steps|stages|approvalsteps)$/i),
+        rules: extractList(await haloGet('/ApprovalProcessRule', { approvalprocess_id: String(idOf(log, 'ap')) }).catch(() => ({}))).map((r) => pick(r, /^(id|name|approvalprocess_id|step_id|approvalprocess_step_id|criteria|agent_id|group_id|approvers)$/i)),
+        ticket_type: pick(await detail('TicketType', zType.id), /approval/i),
+      };
+    });
+
+    // Halo names what's mandatory only in its refusal, so fill those by label and retry (run 17).
     const valueFor = async (fieldId: unknown) => {
       const f = await detail('FieldInfo', fieldId);
       if (!f) return null;
       const t = Number(f.type);
       const first = ((f.values as Row[]) ?? [])[0];
-      const value = t === 2 || t === 3 ? first?.id : t === 4 ? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10) : t === 6 ? true : 'Enact learn round 17';
-      return { name: f.name, value, type: t, label: f.label };
+      return { name: f.name, value: t === 2 || t === 3 ? first?.id : t === 4 ? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10) : t === 6 ? true : 'Enact learn round 19' };
     };
-    const ticket = (customfields: Row[]) => ({ tickettype_id: zType.id, summary: `${SAMPLE} email check`, details: 'Logged by Enact learn round 17 to check acknowledgement and status emails.', user_id: requester.id, customfields });
-    const customfields: Row[] = [];
-    for (let attempt = 1; attempt <= 3 && !tid; attempt++) {
-      try {
-        tid = firstRecord(await haloPost('/Tickets', [ticket(customfields.map(({ name, value }) => ({ name, value })))]))?.id;
-      } catch (e) {
-        const msg = err(e);
-        const labels = [...msg.matchAll(/([^"\\]+?) is mandatory/g)].map((m) => m[1].replace(/^n/, '').trim());
-        const found = labels.map((l) => fieldRows.find((r) => String(r.label ?? '').trim().toLowerCase() === l.toLowerCase()));
-        note(area, `sample ticket attempt ${attempt}`, { refused: msg, mandatory_labels: labels, matched_fields: found.map((r) => r && { id: r.id, name: r.name, label: r.label }) });
-        let added = 0;
-        for (const r of found) {
-          if (!r || customfields.some((c) => c.name === r.name)) continue;
-          const v = await valueFor(r.id);
-          if (v) { customfields.push(v); added++; }
-        }
-        if (!added) break;
-      }
-    }
-    // Where those fields sit on the type's form, so the builder can learn how "mandatory" is marked there.
-    const ttd = await detail('TicketType', zType.id);
-    const ids = new Set(customfields.map((c) => String(fieldRows.find((r) => r.name === c.name)?.id)));
-    note(area, 'mandatory fields on the form', ((ttd?.fields as Row[]) ?? []).filter((r) => ids.has(String(r.fieldid)) || ((r.group as Row)?.fields as Row[] | undefined)?.some((g) => ids.has(String(g.fieldid ?? g.id)))).map((r) => pick(r, /^(id|fieldid|name|seq|endusernew|technew|enduserdetail|techdetail|groupid|group_id|mandatory|fieldinfo)$/)));
-    note(area, 'required fields filled', customfields);
-    if (tid) {
-      const t = await detail('Tickets', tid);
-      const u = t?.user_id ? await detail('Users', t.user_id) : null;
-      note(area, 'sample ticket', { id: tid, team: t?.team, status_id: t?.status_id, requester: { id: u?.id, name: u?.name, email: u?.emailaddress } });
-      summary.push(`· sample ticket ${tid} logged for ${u?.name ?? '?'} (${u?.emailaddress ?? 'no email address'}): check that inbox for "Your request ${tid}: software installed"`);
-    }
-    // If logging failed, still test the status email on the newest sample ticket of that type.
-    const target = tid ?? recent.find((t) => Number(t.tickettype_id) === Number(zType.id) && Number(t.parent_id ?? 0) === 0)?.id;
-    if (target) {
-      try {
-        await new Promise((r) => setTimeout(r, 8000));
-        const before = (await actionsOf(target)).map(actionView);
-        await haloPost('/Tickets', [{ id: target, status_id: zStatus.id }]);
-        await new Promise((r) => setTimeout(r, 10000));
-        const after = await actionsOf(target);
-        note(area, 'actions after logging', { ticket: target, actions: before });
-        note(area, 'actions after moving to the sample status', { ticket: target, status_now: pick(await detail('Tickets', target), /^status/), actions: after.map(actionView) });
-        note(area, 'action keys', after[0] ? Object.keys(after[0]) : []);
-        summary.push(`· sample ticket ${target}: ${before.length} actions after logging, ${after.length} after the status change`);
-        // Halo's background queue: run 17's record (retry_attempts_remaining, system_use, error) came from here.
-        const queue: Row = {};
-        for (const ep of ['PendingAutomation', 'AutomationQueue', 'BackgroundTask', 'BackgroundTasks', 'ProcessQueue', 'TaskQueue', 'EventQueue', 'Queue', 'IntegratorQueue', 'Pending', 'EmailEvents', 'TicketEvent', 'Events']) {
-          try {
-            const rows = extractList(await haloGet(`/${ep}`, { ticket_id: String(target), count: '50' }));
-            const mine = rows.filter((r) => String(r.ticket_id ?? '') === String(target));
-            queue[ep] = { rows: rows.length, for_ticket: mine.map((r) => pick(r, /^(id|timestamp|ticket_id|status|error|system_use|system_use2|execution_type|execute_outcome_id|date_processed)$/)), keys: rows[0] ? Object.keys(rows[0]).slice(0, 25) : [] };
-          } catch (e) {
-            queue[ep] = err(e).slice(0, 80);
+    const fields = await list('FieldInfo');
+    const dd = await detail('FieldInfo', fields.find((r) => r.name === ddName)?.id);
+    const optionId = (n: string) => ((dd?.values as Row[]) ?? []).find((v) => String(v.name) === n)?.id;
+    const logTicket = async (answer: string) => {
+      const extra: Row[] = [];
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const cf = [{ name: ddName, value: optionId(answer) }, ...extra];
+          return firstRecord(await haloPost('/Tickets', [{ tickettype_id: zType.id, summary: `${SAMPLE} approval check: admin rights ${answer}`, details: 'Logged by Enact learn round 19.', user_id: requester.id, customfields: cf }]))?.id;
+        } catch (e) {
+          const labels = [...err(e).matchAll(/([^"\\]+?) is mandatory/g)].map((m) => m[1].replace(/^n/, '').trim());
+          let added = 0;
+          for (const l of labels) {
+            const r = fields.find((x) => String(x.label ?? '').trim().toLowerCase() === l.toLowerCase());
+            if (!r || extra.some((c) => c.name === r.name)) continue;
+            const v = await valueFor(r.id);
+            if (v) { extra.push(v); added++; }
           }
+          if (!added) throw e;
         }
-        note(area, 'background queue for the sample ticket', queue);
+      }
+      return null;
+    };
+    const approvalView = async (tid: unknown) => {
+      const t = await detail('Tickets', tid);
+      const acts = extractList(await haloGet('/Actions', { ticket_id: String(tid), excludesys: 'false' }).catch(() => ({})));
+      const probe: Row = {};
+      for (const ep of ['TicketApproval', 'Approval']) {
+        try {
+          const rows = extractList(await haloGet(`/${ep}`, { ticket_id: String(tid) }));
+          probe[ep] = rows.filter((r) => String(r.ticket_id ?? r.faultid ?? tid) === String(tid)).slice(0, 10).map((r) => pick(r, /^(id|ticket_id|seq|step|step_id|stage|status|result|approved|agent_id|agent_name|group_id|group_name|name|approvalprocess_id|approvalprocess_step_id|datesent|dateresponded|type)$/i));
+        } catch (e) {
+          probe[ep] = err(e).slice(0, 80);
+        }
+      }
+      return {
+        ticket: tid,
+        answer: ((t?.customfields as Row[]) ?? []).find((c) => c.name === ddName)?.display,
+        status: t?.status_id,
+        approval: pick(t, /approv/i),
+        actions: acts.map((a) => pick(a, /^(id|outcome|note|new_status_name)$/)),
+        approval_records: probe,
+      };
+    };
+    for (const answer of ['Yes', 'No']) {
+      try {
+        const tid = await logTicket(answer);
+        await new Promise((r) => setTimeout(r, 8000));
+        const v = await approvalView(tid);
+        note('approval experiments', `ticket answering ${answer}`, v);
+        summary.push(`· approval check: ticket ${tid} (admin rights ${answer}) status ${v.status}, approval ${JSON.stringify(v.approval).slice(0, 80)}`);
       } catch (e) {
-        note(area, 'status change failed', err(e));
+        note('approval experiments', `ticket answering ${answer} failed`, err(e));
       }
     }
   }
