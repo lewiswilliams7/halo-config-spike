@@ -82,10 +82,34 @@ export const SPIKE_MAP = {
   emailBrand: {
     keptByHalo: true as boolean | null,
   },
-  /** Halo $variables (rule EM2), case-insensitive. Filled from the variables Halo's OWN templates use (learn round 15),
-   *  never from a guess. While null, the planner gets the three seen so far and nothing is refused. */
+  /** Halo $variables (rule EM2), case-insensitive. Evidence: learning run 16, every whole-word $variable in the subjects
+   *  and HTML of the instance's 94 email templates (97 distinct). Meanings in `common` are from how Halo's own templates
+   *  use them ("Hi $firstname,", "Logged $DATEOCCURED", "changed to $status", "Technician Assigned: $assignedto"). */
   emailVariables: {
-    known: null as string[] | null,
+    known: [
+      '$ORNAME', '$FAULTID', '$SYMPTOM', '$ORPHONE', '$ORWEBSITE', '$LINKTOREQUESTUSER', '$CURRENTDATE',
+      '$RICHACTIONNOTE', '$DATECLEARED', '$ORCOLOUR', '$SECTION', '$STATUS', '$SUPPREF', '$USERNAME', '$ACTIONWHO',
+      '$AREA', '$CODE', '$LINKTOWEBAPP', '$QUOTEREF', '$SUPPEND', '$SUPPSTART', '$DATEOCCURED', '$ASSIGNEDTO',
+      '$CLEARANCE', '$INVOICEID', '$LOCKERCODE', '$LOCKERNAME', '$PASSWORD', '$USEREMAILADDRESS', '$ACCEPTLINK',
+      '$APSTARTDATE', '$CAMPAIGNNAME', '$CONFIRMCLOSURE', '$DENYCLOSURE', '$FEEDBACK1', '$FEEDBACK2', '$FEEDBACK3',
+      '$FEEDBACK4', '$HELPDESKURL', '$KEYMESSAGE', '$LINKTOARTICLE', '$LINKTOREQUESTAGENT', '$MERGEDREQUESTID',
+      '$REJECTLINK', '$RELEASEDESCRIPTION', '$SYMPTOM2', '$THIRDPARTYINVOICENUMBER', '$ACTIVITY', '$ALLFIELDS',
+      '$ALLFIELDSQA', '$APPOINTMENTTECHNICIAN', '$APPROVALOUTCOME', '$APSTARTTIME', '$APSUBJECT', '$AREASITE',
+      '$CAMPAIGNLINK', '$CATEGORY2', '$CONTRACTAPPOINTMENTSREMAINING', '$COUNTERSIGNAPPROVE', '$COUNTERSIGNREJECT',
+      '$DATENOW', '$EMAILHISTORY', '$FEEDBACKCOMMENT', '$FEEDBACKDATE', '$FEEDBACKSCORE', '$FEEDBACKTECH',
+      '$FIRSTNAME', '$FIXBYDATE', '$INCOMPLETETIMESHEETPERCENTAGE', '$INCOMPLETETIMESHEETTABLE', '$INVOICELINK',
+      '$INVOICENUMBER', '$KBDESCRIPTION', '$KBRESOLUTION', '$KBSUBJECT', '$KBTITLE', '$NEWEMAILADDRESS',
+      '$NEWUSERNAME', '$ORLOGOSRC', '$PASSWORDRESETLINK', '$PROJECTAPPOINTMENTSREMAINING', '$QUOTEAPPROVAL',
+      '$QUOTEAPPROVALNOTE', '$QUOTELINK', '$RELEASENOTELIST', '$RELEVANTRELEASENOTE', '$REMOTEINVITE',
+      '$RESPONDBYDATE', '$SATISFACTIONWEBLINKTEXT', '$SERVICEMESSAGE', '$SERVICENAME', '$SERVICESTATUS',
+      '$SLAHOLDRICHACTIONNOTE', '$TIMESHEETDATE', '$TIMESHEETMESSAGE', '$VALIDATE', '$WORKFLOWPROGRESS',
+    ] as string[] | null,
+    common: {
+      $FAULTID: 'ticket number', $SYMPTOM: 'ticket summary', $USERNAME: "requester's name", $FIRSTNAME: "requester's first name",
+      $STATUS: 'status', $ASSIGNEDTO: 'assigned agent', $DATEOCCURED: 'date logged (Halo spells it with one R)',
+      $LINKTOREQUESTUSER: "link to the ticket for the requester (use as a link's address)", $RICHACTIONNOTE: 'the latest note',
+      $ORNAME: 'organisation name',
+    } as Record<string, string>,
   },
   /** An action button that emails the requester (rule E1). Evidence: learning run 2, all 86 actions: Halo's own "Email
    *  User" has sendemail 1 ("Send email" ticked), hidesendemail false (box shown), includeto true (To = the ticket's
@@ -290,9 +314,9 @@ export const featureReady = (f: Feature) => featureGaps(f).length === 0;
 export const readyFeaturePrompt = () => FEATURES.filter(featureReady).map((f) => f.prompt).filter(Boolean).join('\n');
 /** The Halo variables the planner may use: the evidenced list once learn has read it, else the three seen so far. */
 export function emailVariablePrompt(): string {
-  const known = SPIKE_MAP.emailVariables.known;
+  const { known, common } = SPIKE_MAP.emailVariables;
   if (!known) return '$FAULTID (ticket number), $symptom (summary), $STATUS';
-  return `${known.join(', ')}. Use no others`;
+  return `${Object.entries(common).map(([v, m]) => `${v} (${m})`).join(', ')}. Use only these; a variable Halo doesn't know is refused by the checks`;
 }
 /** Plain names of the features not ready yet, for the planner's "unsupported" guidance. */
 export const notReadyFeatureNames = () => FEATURES.filter((f) => !featureReady(f)).map((f) => f.name);

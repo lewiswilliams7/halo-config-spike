@@ -93,7 +93,7 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
     const text = [s.subject, s.body, s.set?.subject, s.set?.body].filter(Boolean).join(' ');
     const unknown = variablesIn(text).filter((v) => !known.includes(v.toLowerCase()));
     if (unknown.length)
-      errors.push(`step "${s.id}": ${unknown.join(', ')} ${unknown.length === 1 ? "isn't a variable" : "aren't variables"} Halo uses. Use only: ${SPIKE_MAP.emailVariables.known!.join(', ')}.`);
+      errors.push(`step "${s.id}": ${unknown.join(', ')} ${unknown.length === 1 ? "isn't a variable" : "aren't variables"} Halo uses. Use one it knows, such as ${Object.keys(SPIKE_MAP.emailVariables.common).join(', ')}.`);
   }
 
   // M5: a threshold is its own two-option field; never fold it into another field's options.

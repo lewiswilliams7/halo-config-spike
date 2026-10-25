@@ -4,6 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 17 (25 Oct): the sample ticket again, filling whatever Halo says is mandatory (by label), the ticket's own
+ * requester and their email address, and where Halo keeps sent emails (mailboxes, queue endpoints), so we can tell
+ * "no email sent" from "sent but not logged as an action".
  * Round 16 (25 Oct): emails at work. Enact logs its own sample ticket (filling the type's required fields), moves it to
  * the sample status, and reads every action Halo logged (acknowledgement EM4, status email EM3). Variables re-read from
  * subjects and HTML only, as whole words (EM2: round 15's plain-text read glued words on). Sample template 46 gets
@@ -34,7 +37,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 16, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 17, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -255,24 +258,44 @@ if (apply) {
   const actionView = (a: Row) => pick(a, /^(id|outcome|who|note|emailto|emailcc|emailfrom|emailsubject|emailtonew|datetime|actionby_agent_id|sendemail|outcome_id|new_status|new_status_name|actisemail|actionarrivaldate|actioncompletiondate)$/i);
   if (zType && zStatus && requester) {
     let tid: unknown = null;
-    try {
-      const ttd = await detail('TicketType', zType.id);
-      const required = ((ttd?.fields as Row[]) ?? []).filter((r) => Number(r.fieldid) > 0 && (Number(r.technew) === 3 || Number(r.endusernew) === 3));
-      const customfields: Row[] = [];
-      for (const r of required) {
-        const f = await detail('FieldInfo', r.fieldid);
-        if (!f || !String(f.name ?? '').startsWith('CF')) continue;
-        const t = Number(f.type);
-        const first = ((f.values as Row[]) ?? [])[0];
-        const value = t === 2 || t === 3 ? first?.id : t === 4 ? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10) : t === 6 ? true : 'Enact learn round 16';
-        customfields.push({ name: f.name, value });
+    // Halo names what's mandatory only in its refusal ("Why is this needed? is mandatory"), so fill by label and retry.
+    const valueFor = async (fieldId: unknown) => {
+      const f = await detail('FieldInfo', fieldId);
+      if (!f) return null;
+      const t = Number(f.type);
+      const first = ((f.values as Row[]) ?? [])[0];
+      const value = t === 2 || t === 3 ? first?.id : t === 4 ? new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10) : t === 6 ? true : 'Enact learn round 17';
+      return { name: f.name, value, type: t, label: f.label };
+    };
+    const ticket = (customfields: Row[]) => ({ tickettype_id: zType.id, summary: `${SAMPLE} email check`, details: 'Logged by Enact learn round 17 to check acknowledgement and status emails.', user_id: requester.id, customfields });
+    const customfields: Row[] = [];
+    for (let attempt = 1; attempt <= 3 && !tid; attempt++) {
+      try {
+        tid = firstRecord(await haloPost('/Tickets', [ticket(customfields.map(({ name, value }) => ({ name, value })))]))?.id;
+      } catch (e) {
+        const msg = err(e);
+        const labels = [...msg.matchAll(/([^"\\]+?) is mandatory/g)].map((m) => m[1].replace(/^n/, '').trim());
+        const found = labels.map((l) => fieldRows.find((r) => String(r.label ?? '').trim().toLowerCase() === l.toLowerCase()));
+        note(area, `sample ticket attempt ${attempt}`, { refused: msg, mandatory_labels: labels, matched_fields: found.map((r) => r && { id: r.id, name: r.name, label: r.label }) });
+        let added = 0;
+        for (const r of found) {
+          if (!r || customfields.some((c) => c.name === r.name)) continue;
+          const v = await valueFor(r.id);
+          if (v) { customfields.push(v); added++; }
+        }
+        if (!added) break;
       }
-      note(area, 'required fields filled', customfields);
-      const made = firstRecord(await haloPost('/Tickets', [{ tickettype_id: zType.id, summary: `${SAMPLE} email check`, details: 'Logged by Enact learn round 16 to check acknowledgement and status emails.', user_id: requester.id, customfields }]));
-      tid = made?.id;
-      note(area, 'sample ticket', { id: tid, requester: { id: requester.id, name: requester.name, email: requester.emailaddress } });
-    } catch (e) {
-      note(area, 'sample ticket failed', err(e));
+    }
+    // Where those fields sit on the type's form, so the builder can learn how "mandatory" is marked there.
+    const ttd = await detail('TicketType', zType.id);
+    const ids = new Set(customfields.map((c) => String(fieldRows.find((r) => r.name === c.name)?.id)));
+    note(area, 'mandatory fields on the form', ((ttd?.fields as Row[]) ?? []).filter((r) => ids.has(String(r.fieldid)) || ((r.group as Row)?.fields as Row[] | undefined)?.some((g) => ids.has(String(g.fieldid ?? g.id)))).map((r) => pick(r, /^(id|fieldid|name|seq|endusernew|technew|enduserdetail|techdetail|groupid|group_id|mandatory|fieldinfo)$/)));
+    note(area, 'required fields filled', customfields);
+    if (tid) {
+      const t = await detail('Tickets', tid);
+      const u = t?.user_id ? await detail('Users', t.user_id) : null;
+      note(area, 'sample ticket', { id: tid, team: t?.team, status_id: t?.status_id, requester: { id: u?.id, name: u?.name, email: u?.emailaddress } });
+      summary.push(`· sample ticket ${tid} logged for ${u?.name ?? '?'} (${u?.emailaddress ?? 'no email address'}): check that inbox for "Your request ${tid}: software installed"`);
     }
     // If logging failed, still test the status email on the newest sample ticket of that type.
     const target = tid ?? recent.find((t) => Number(t.tickettype_id) === Number(zType.id) && Number(t.parent_id ?? 0) === 0)?.id;
@@ -294,21 +317,17 @@ if (apply) {
   }
 }
 
-// Round 16 (EM2): every $variable in Halo's own templates' subjects and HTML, as whole words, case kept.
-const vars = new Map<string, { count: number; seen: string }>();
-for (const t of tpls) {
-  const d = await detail('EmailTemplate', t.id);
-  const text = [d?.header_text, d?.body_html].map((x) => String(x ?? '')).join(' \n ');
-  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_])/g)) {
-    const k = `$${m[1]}`;
-    const v = vars.get(k) ?? { count: 0, seen: text.slice(Math.max(0, (m.index ?? 0) - 25), (m.index ?? 0) + k.length + 25).replace(/\s+/g, ' ') };
-    v.count += 1;
-    vars.set(k, v);
+// Round 17: where sent emails live. Mailboxes (is outgoing mail set up?) and candidate queue endpoints, read-only.
+const mailboxes = await list('Mailbox');
+note('requester emails', 'mailboxes', mailboxes.slice(0, 10).map((m) => pick(m, /^(id|name|type|emailaddress|mailbox_type|smtp|outgoing|use|default|enabled|active|from)/i)));
+for (const ep of ['EmailQueue', 'OutgoingEmail', 'OutgoingEmails', 'Email', 'EmailLog']) {
+  try {
+    const rows = extractList(await haloGet(`/${ep}`, { count: '5' }));
+    note('requester emails', `endpoint /${ep}`, { rows: rows.length, keys: rows[0] ? Object.keys(rows[0]).slice(0, 40) : [], first: rows[0] ? pick(rows[0], /^(id|to|emailto|subject|emailsubject|status|datesent|date|ticket_id|faultid)/i) : null });
+  } catch (e) {
+    note('requester emails', `endpoint /${ep}`, err(e).slice(0, 160));
   }
 }
-note('requester emails', 'variables in Halo\'s own templates (subjects and HTML, whole words)', Object.fromEntries([...vars].sort((a, b) => b[1].count - a[1].count)));
-note('requester emails', 'templates read for variables', tpls.length);
-summary.push(`· ${vars.size} different $variables across ${tpls.length} email templates`);
 
 // 3. What Halo actually sent: the email actions on the most recent sample tickets.
 const emailed: Row[] = [];
