@@ -23,7 +23,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
 | Approval groups (CABs) | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
 | Teams | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
-| Categories | 🔒 | K1. Built; switched on once learn round 7 proves a multi-level path |
+| Categories, and ticket rules that set one | ✅ | K1. Category 262 (three levels) and rule 30 built and read back on gethandoveruk |
 | Priorities | ⬜ | Usually reused |
 | Field groups | 🧪 | Create + attach to ticket type coded (M1), `plans/tier1-test.json` |
 | Updating existing objects (any of the above) | ✅ | Partial updates proven safe (U0) |
@@ -36,8 +36,8 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28 built and read back (requesttypenew + dropdown criteria, team, priority 2, nothing else) |
 | Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
-| Agent notifications on events | 🔒 | N1. Built for 5 events; switched on once learn round 7 proves a subscription. SLA breach events: ⬜ |
-| Priority matrix (impact x urgency) | 🧪 | TR3. Switched on; learn round 7 builds a matrix rule |
+| Agent notifications on events | 🔒 | N1, N2. Built for 5 events; copied role subscriptions found in run 7 (fixed), re-proving in round 8. SLA breach events: ⬜ |
+| Priority matrix (impact x urgency) | ✅ | TR3. Matrix rule 29 (use 2, impact 1, urgency 2, priority 2) built and read back |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
 | Service catalogue (services, portal request types) | ⬜ | |
 | Agents, roles and permissions | ⬜ | Sensitive: needs extra approval UX |

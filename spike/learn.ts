@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 7 (25 Oct): proves categories, a priority matrix rule, a rule that sets a category, an agent notification and
- * the parent template team fix (C2) with the builder. Earlier proofs re-run as a regression check (nothing to change).
+ * Round 8 (25 Oct): an agent notification reaches only the agents asked for (N2). Earlier proofs re-run as a
+ * regression check (nothing to change).
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -136,44 +136,22 @@ if (apply && team) {
 
 // Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
 const assigning: Row[] = [];
-// ---------- 3. round 7: categories, priority matrix, rule category, agent notifications, parent team (C2) ----------
-if (apply && ticketType) {
+// ---------- 3. round 8: an agent notification reaches only the agents asked for (N2) ----------
+if (apply) {
   const agents = await list('Agent');
   const me = agents.find((a) => /lewis/i.test(nameOf(a))) ?? agents.find((a) => Number(a.id) > 1 && !/\(ai\)/i.test(nameOf(a)));
-  note('reference', 'agent for the notification', me && nameOf(me));
-  await prove('category, matrix rule, rule that sets a category, notification', {
-    request: 'Enact learning run 7',
-    steps: [
-      { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
-      ...(me ? [{ id: 'me', object: 'agent' as const, action: 'reuse' as const, match: { name: nameOf(me) } }] : []),
-      { id: 'cat', object: 'category', action: 'create', name: `${SAMPLE}>Software>Licensing` },
-      // Same answer as Halo's own "Priority 2 - High Impact, Medium Urgency", so tickets aren't affected.
-      { id: 'mx', object: 'ticket_rule', action: 'create', name: `${SAMPLE} matrix`, when: [{ impact: 'High' }, { urgency: 'Medium' }], then: { priority: 2 } },
-      { id: 'cr', object: 'ticket_rule', action: 'create', name: `${SAMPLE} category rule`, when: [{ ticket_type: 'tt' }], then: { category: 'cat' } },
-      ...(me ? [{ id: 'n', object: 'notification' as const, action: 'create' as const, name: `${SAMPLE} notification`, event: 'p1_logged', by: 'popup' as const, agents: ['me'] }] : []),
-    ],
-  }, async (log) => ({
-    category: await detail('Category', idOf(log, 'cat')),
-    matrix_rule: pick(await detail('TicketRules', idOf(log, 'mx')), /^(name|use|new_priority_id|criteria)$/),
-    category_rule: pick(await detail('TicketRules', idOf(log, 'cr')), /^(name|use|new_category|criteria)/),
-    notification: idOf(log, 'n') ? await detail('Notification', idOf(log, 'n')) : null,
-  }));
-
-  // C2: a new parent template keeps the ticket type's own team (not Leaver's). Needs a ticket type without a template.
-  const team = (await list('Team'))[0];
-  await prove('child tickets keep the ticket type team', {
-    request: 'Enact learning run 7',
-    steps: [
-      { id: 'src', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
-      { id: 'zt2', object: 'ticket_type', action: 'create', name: `${SAMPLE} request 2`, based_on: nameOf(ticketType) },
-      ...(team ? [{ id: 'team', object: 'team' as const, action: 'reuse' as const, match: { name: nameOf(team) } }] : []),
-      { id: 'kids', object: 'ticket_template', action: 'create', name: `${SAMPLE} children 2`, attach_to: 'zt2', children: [{ summary: `${SAMPLE} child A`, ticket_type: 'zt2' }] },
-    ],
-  }, async (log) => {
-    const t = await detail('Template', idOf(log, 'kids'));
-    const tt = await detail('TicketType', idOf(log, 'zt2'));
-    return { template_team: t?.team, ticket_type_team: tt?.default_team, children: ((t?.children as Row[]) ?? []).map((c) => c.name) };
-  });
+  if (me) {
+    await prove('notification to one agent only', {
+      request: 'Enact learning run 8',
+      steps: [
+        { id: 'me', object: 'agent', action: 'reuse', match: { name: nameOf(me) } },
+        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 2`, event: 'p1_logged', by: 'popup', agents: ['me'] },
+      ],
+    }, async (log) => {
+      const n = await detail('Notification', idOf(log, 'n'));
+      return { agents: ((n?.agents as Row[]) ?? []).map((a) => `${a.agent_name} (${a.role_name || 'direct'})`), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), eventno: n?.eventno };
+    });
+  }
 }
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');

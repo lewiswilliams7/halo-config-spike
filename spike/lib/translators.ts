@@ -142,7 +142,8 @@ export const SPIKE_MAP = {
   ruleCategory: {
     setId: 'new_category_1_id' as string | null,
     setName: 'new_category_1_name' as string | null,
-    provenOnTrial: null as boolean | null,
+    /** Learning run 7: rule 30 read back with new_category_1_id 262 and its path. */
+    provenOnTrial: true as boolean | null,
   },
   /** Categories (rule K1). Evidence: learning run 6: 105 Category rows, value = the path "Level 1>Level 2>Level 3"
    *  (Halo fills category_name and level1-3 from it), type_id = which category list (1 = category 1). Sample 261 kept
@@ -150,13 +151,15 @@ export const SPIKE_MAP = {
   category: {
     nameKey: 'value' as string | null,
     separator: '>' as string | null,
-    provenOnTrial: null as boolean | null,
+    /** Learning run 7: category 262 "zz Enact sample>Software>Licensing" read back split into three levels. */
+    provenOnTrial: true as boolean | null,
   },
   /** Agent notifications (rule N1). Evidence: learning run 6, Notification 2-6: eventno, delivery_method (0 pop-up,
    *  1 email), emailtemplate_id (agent template "Technician Update"), agents[] { agent_id, role_id }. Events seen by
    *  name: 2 new ticket logged to a team, 6 P1 ticket logged, 17 ticket updated by the user, 33 ticket re-assigned,
    *  1008 mention. Whether agents can be subscribed without a role: learn round 7. */
   notification: {
+    /** Learning run 7: notification 31 subscribed 8 agents through copied roles (N2); re-proved in round 8. */
     events: { new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
     provenOnTrial: null as boolean | null,
   },
@@ -1456,7 +1459,15 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule N1 (SPIKE_MAP.notification). Shape from one of the instance's own notifications; its subscribers dropped.
     resource: 'Notification',
     template: 'template-notification.json',
-    verifyCreate: (back) => (((back.agents as Row[]) ?? []).length ? [] : ['notification saved with nobody subscribed']),
+    // N2: only the agents asked for, and no one subscribed through a role.
+    verifyCreate: (back) => {
+      const out: string[] = [];
+      if (!((back.agents as Row[]) ?? []).length) out.push('notification saved with nobody subscribed');
+      if (((back.roles as Row[]) ?? []).length || ((back.user_roles as Row[]) ?? []).length) out.push(`notification is also sent to whole roles (${((back.roles as Row[]) ?? []).map((r) => r.role_name).join(', ')})`);
+      const extra = ((back.agents as Row[]) ?? []).filter((a) => String(a.role_name ?? '') !== '');
+      if (extra.length) out.push(`notification reaches agents through roles: ${[...new Set(extra.map((a) => a.agent_name))].join(', ')}`);
+      return out;
+    },
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-notification.json'), 'Notification');
       const m = SPIKE_MAP.notification;
@@ -1467,7 +1478,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       p.delivery_method = step.by === 'email' ? 1 : 0;
       p.agents = (step.agents ?? []).map((a) => ({ agent_id: refs[a]?.id }));
       if (!(step.agents ?? []).length) warn('notification: nobody to notify');
-      Object.assign(p, { agent_id: 0, user_id: 0, email_list: '', condition_count: 0, rule_id: -1 });
+      // Rule N2 (2026-10-25): the source's ROLE subscriptions came along (roles[]), and Halo expanded them to everyone
+      // in Facilities, HR, IT and Administrator: 8 agents instead of 1. Nobody is subscribed but the plan's agents.
+      Object.assign(p, { agent_id: 0, user_id: 0, email_list: '', condition_count: 0, rule_id: -1, roles: [], user_roles: [], conditions: [] });
       return p;
     },
   },
