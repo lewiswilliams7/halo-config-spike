@@ -32,15 +32,15 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 
 | Area | Status | Notes |
 |---|---|---|
-| Email templates, and emails sent from an action | 🧪 | E1, O4. Switched on; builder proof on the trial pending (learn round 3). Emails on events (notifications): ⬜ |
-| Ticket rules: route to a team or agent, set a priority, on ticket type and answers | 🧪 | TR1, TR2. Switched on; builder proof on the trial pending (learn round 3) |
+| Email templates, and emails sent from an action | ✅ | E1, O4. Built by the builder on gethandoveruk (template -103, action 107), read back exactly. Delivery to be seen in the UI. Emails on events (notifications): ⬜ |
+| Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28 built and read back (requesttypenew + dropdown criteria, team, priority 2, nothing else) |
 | Child tickets raised when a ticket is logged | 🔒 | C1. Built from templates 1 and 30; switched on once learn round 3 proves inline children. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
 | Escalation and SLA breach notifications | ⬜ | |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
 | Service catalogue (services, portal request types) | ⬜ | |
 | Agents, roles and permissions | ⬜ | Sensitive: needs extra approval UX |
-| Show a field only for some answers | 🧪 | V1. Switched on; proof run pending. Sections: 🔒 (shape not understood) |
+| Show a field only for some answers | ✅ | V1. Field 366 on Software Licensing Request, condition read back in Halo's shape. Sections: 🔒 (shape not understood) |
 | Workflow edits beyond inserting a step | ⬜ | Remove, reorder, conditions, automations |
 
 ## Tier 3: specialist (later, or partner-led)
