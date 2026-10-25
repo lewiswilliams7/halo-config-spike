@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 13 (25 Oct): a notification that tells a team's members (subscribed directly), with the team and ticket type
- * as filters (N5), on 'new ticket logged'. The ticket check and earlier proofs re-run as regression checks.
+ * Round 14 (25 Oct): emails to the requester on events: how ticket types (acknowledgement) and statuses use email
+ * templates, experiments on the samples, and the emails Halo logged on recent tickets. Earlier proofs re-run.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -158,24 +158,80 @@ note('tickets', 'recent sample-related tickets (what the builds did)', seen);
 note('tickets', 'keys on a ticket (first)', recent[0] ? Object.keys(recent[0]) : []);
 summary.push(`· tickets: ${seen.length} recent sample-related tickets read`);
 
-// ---------- round 13: team members are told, the team filters (N5) ----------
-if (apply && ticketType) {
-  const teams = await list('Team');
-  const slTeam = teams.find((t) => /software licen/i.test(nameOf(t))) ?? teams[0];
-  if (slTeam) {
-    await prove("notification to a team's members, new ticket, one ticket type", {
-      request: 'Enact learning run 13',
-      steps: [
-        { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
-        { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(slTeam) } },
-        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 5`, event: 'new_ticket', by: 'popup', team: 'team', when: [{ ticket_type: 'tt' }] },
-      ],
-    }, async (log) => {
-      const n = await detail('Notification', idOf(log, 'n'));
-      return { team_name: n?.team_name, eventno: n?.eventno, delivery_method: n?.delivery_method, agents: ((n?.agents as Row[]) ?? []).map((a) => `${a.agent_name} (${a.role_name || 'direct'})`), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), conditions: ((n?.conditions as Row[]) ?? []).map((c) => `${c.fieldname} = ${c.value_display}`) };
-    });
+// ---------- round 14: emails to the requester on events (acknowledgement, status change) ----------
+// 1. How this Halo does it today.
+const ackTypes: Row[] = [];
+for (const t of types) {
+  const d = await detail('TicketType', t.id);
+  const k = pick(d, /acknowledg|emailtemplate|email_template|sendemail|template_id/i);
+  if (Object.entries(k).some(([, v]) => set(v))) ackTypes.push({ ticket_type: nameOf(t), ...k });
+}
+note('requester emails', 'ticket types with an acknowledgement or email setting', ackTypes);
+const statuses = await list('Status');
+const statusEmail: Row[] = [];
+for (const st of statuses) {
+  const d = await detail('Status', st.id);
+  const k = pick(d, /mail|template|notify|send/i);
+  statusEmail.push({ status: nameOf(st), id: st.id, ...k });
+}
+note('requester emails', 'status email settings', statusEmail);
+const tpls = await list('EmailTemplate');
+const linked: Row[] = [];
+for (const t of tpls) {
+  const d = await detail('EmailTemplate', t.id);
+  const links = Object.fromEntries(Object.entries(pick(d, /^(statuses|tickettypes|notifications|emailrules|approvalprocesses|mailboxes|outcomes)$/)).filter(([, v]) => Array.isArray(v) && v.length));
+  if (Object.keys(links).length) linked.push({ template: nameOf(d ?? {}), id: t.id, header_text: d?.header_text, ...links });
+  if (linked.length >= 12) break;
+}
+note('requester emails', 'email templates linked to statuses / ticket types', linked);
+summary.push(`· requester emails: ${ackTypes.length} ticket types with an email setting, ${linked.length} templates linked`);
+
+// 2. Experiments on the samples only (zz ticket type 70, zz email template, a new zz status).
+if (apply) {
+  const area = 'requester email experiments';
+  const zt = types.find((t) => String(t.name) === `${SAMPLE} request`);
+  const zEmail = tpls.find((t) => String(t.name) === `${SAMPLE} installed email`);
+  if (zt && zEmail) {
+    try {
+      await haloPost('/TicketType', [{ id: zt.id, acknowledgementtemplate: zEmail.id }]);
+      note(area, 'ticket type acknowledgement', pick(await detail('TicketType', zt.id), /acknowledg/i));
+    } catch (e) {
+      note(area, 'ticket type acknowledgement failed', err(e));
+    }
+  }
+  // A sample status, then link the sample email template to it.
+  let zStatus = statuses.find((x) => String(x.name) === `${SAMPLE} status`);
+  if (!zStatus) {
+    await prove('a sample status', { request: 'Enact learning run 14', steps: [{ id: 'st', object: 'status', action: 'create', name: `${SAMPLE} status` }] }, async (log) => ({ id: idOf(log, 'st') }));
+    zStatus = (await list('Status')).find((x) => String(x.name) === `${SAMPLE} status`);
+  }
+  if (zStatus && zEmail) {
+    for (const [label, rows] of [['statuses as {value}', [{ value: String(zStatus.id) }]], ['statuses as {value,label}', [{ value: String(zStatus.id), label: nameOf(zStatus) }]], ['statuses as {id}', [{ id: zStatus.id }]]] as [string, Row[]][]) {
+      try {
+        await haloPost('/EmailTemplate', [{ id: zEmail.id, statuses: rows }]);
+        const back = await detail('EmailTemplate', zEmail.id);
+        note(area, `link status: ${label}`, { statuses: back?.statuses, status_now: pick(await detail('Status', zStatus.id), /mail|template|notify|send/i) });
+        if (((back?.statuses as Row[]) ?? []).length) break;
+      } catch (e) {
+        note(area, `link status: ${label} failed`, err(e));
+      }
+    }
   }
 }
+
+// 3. What Halo actually sent: the email actions on the most recent sample tickets.
+const emailed: Row[] = [];
+for (const t of recent.slice(0, 15)) {
+  try {
+    const acts = extractList(await haloGet('/Actions', { ticket_id: String(t.id), excludesys: 'false' }));
+    const mails = acts.filter((a) => /mail/i.test(String(a.outcome ?? a.who ?? '')) || a.emailto || a.emailfrom || Number(a.actionby_application_id ?? 0) === 0 && String(a.note ?? '').toLowerCase().includes('email'));
+    if (mails.length) emailed.push({ ticket: t.id, type: typeName.get(Number(t.tickettype_id)), emails: mails.slice(0, 4).map((a) => pick(a, /^(id|outcome|emailto|emailfrom|emailsubject|datetime|who)$/)) });
+  } catch (e) {
+    emailed.push({ ticket: t.id, error: err(e) });
+    break;
+  }
+}
+note('requester emails', 'emails Halo logged on recent tickets', emailed);
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(file, JSON.stringify(out, null, 2));
