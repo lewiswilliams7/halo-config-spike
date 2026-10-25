@@ -4,7 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 5 (25 Oct): the builder makes child tickets end to end (rule C1). Re-runs of round 3's proofs must change nothing.
+ * Round 6 (25 Oct): reads notifications on events, the priority matrix and categories (one sample category). Rounds 3
+ * and 5's builder proofs re-run as a regression check: they must change nothing.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -135,60 +136,81 @@ if (apply && team) {
 
 // Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
 const assigning: Row[] = [];
-// ---------- 2. which sendemail number sends, and who to ----------
-const outcomes = await list('Outcome');
-const combos: Record<string, string[]> = {};
-const emailFull: Row[] = [];
-let plain: Row | null = null;
-for (const o of outcomes) {
-  const d = await detail('Outcome', o.id);
-  if (!d) continue;
-  const key = `sendemail=${d.sendemail} hidesendemail=${d.hidesendemail} template=${Number(d.emailtemplate_id) > 0 ? 'yes' : 'no'}`;
-  (combos[key] ??= []).push(nameOf(d));
-  if ((Number(d.sendemail) !== 2 || Number(d.emailtemplate_id) > 0) && emailFull.length < 4) emailFull.push(d);
-  if (String(d.defaultteam ?? '') !== '' || Number(d.defaultagent ?? 0) > 0) assigning.push({ id: d.id, name: nameOf(d), defaultteam: d.defaultteam, defaultagent: d.defaultagent_name ?? d.defaultagent });
-  if (!plain && Number(d.systemid ?? 0) === 0 && !/resolv|close|approv|cancel|merge|delete/i.test(nameOf(d))) plain = d;
+// ---------- 3. notifications on events (round 6) ----------
+// Probe: /Notification exists with eventno, emailtemplate_id, agents. Read them all, in full, with their conditions.
+const notes = await list('Notification');
+note('notifications', 'count', notes.length);
+note('notifications', 'list rows (first 5)', notes.slice(0, 5));
+const noteFull: Row[] = [];
+for (const n of notes.slice(0, 40)) {
+  const d = await detail('Notification', n.id);
+  if (d) noteFull.push(d);
 }
-note('actions', 'sendemail combinations (action names)', combos);
-note('actions', 'actions with a default team or agent (O4)', assigning);
-note('actions', 'actions that differ (full)', emailFull);
-summary.push(`· actions: ${Object.keys(combos).length} sendemail combinations across ${outcomes.length} actions`);
-// ---------- 3. a priority's number ----------
-const prios = await list('Priority');
-note('priorities', 'list rows (first 6)', prios.slice(0, 6));
-if (prios[0]) note('priorities', 'first (full)', await detail('Priority', prios[0].id));
-const slas = await list('SLA');
-if (slas[0]) note('priorities', 'SLA priorities rows', ((await detail('SLA', slas[0].id))?.priorities as Row[] | undefined)?.slice(0, 4));
-const rules = await list('TicketRules');
-note('priorities', 'rules that set a priority', (await Promise.all(rules.slice(0, 20).map((r) => detail('TicketRules', r.id)))).filter((d) => Number(d?.new_priority_id) > 0).map((d) => pick(d, /^name$|priority/i)));
+note('notifications', 'events in use (eventno: names)', noteFull.reduce((acc: Row, d) => {
+  const k = String(d.eventno);
+  acc[k] = [...((acc[k] as string[]) ?? []), nameOf(d)];
+  return acc;
+}, {}));
+// The richest few in full: ones with conditions, recipients and a template.
+note('notifications', 'full (up to 6, with conditions first)', [...noteFull].sort((a, b) => Number(b.condition_count ?? 0) - Number(a.condition_count ?? 0)).slice(0, 6));
+for (const path of ['/Event', '/NotificationEvent', '/Lookup?lookupid=17', '/EventType']) {
+  try {
+    const rows = extractList(await haloGet(path.split('?')[0], path.includes('?') ? Object.fromEntries(new URLSearchParams(path.split('?')[1])) : undefined));
+    if (rows.length) { note('notifications', `event names from ${path}`, rows.slice(0, 80)); break; }
+  } catch {
+    // not there
+  }
+}
+summary.push(`· notifications: ${notes.length}, ${new Set(noteFull.map((d) => d.eventno)).size} different events`);
 
-// ---------- 4. child tickets: every template ----------
-const tpls = await list('Template');
-const withChildren: Row[] = [];
-const childKeys = new Set<string>();
-for (const t of tpls) {
-  const d = await detail('Template', t.id);
-  if (!d) continue;
-  Object.keys(d).filter((k) => /child|parent|sub/i.test(k)).forEach((k) => childKeys.add(k));
-  if (Object.entries(d).some(([k, v]) => /child/i.test(k) && Array.isArray(v) && v.length) && withChildren.length < 2) withChildren.push(d);
+// ---------- 4. priority matrix (impact x urgency) ----------
+const allRules = await list('TicketRules');
+const matrix: Row[] = [];
+for (const r of allRules) {
+  const d = await detail('TicketRules', r.id);
+  if (d && Number(d.use) !== 0) matrix.push({ id: d.id, name: d.name, use: d.use, precedence: d.precedence, new_priority_id: d.new_priority_id, criteria: ((d.criteria as Row[]) ?? []).map((c) => pick(c, /fieldname|value_int|value_string|type$/)) });
 }
-note('child tickets', 'template keys about children', [...childKeys]);
-note('child tickets', 'templates with children (full)', withChildren);
-const linked: Row = {};
-for (const t of types) {
+note('priority matrix', 'rules with use 1 or 2', matrix);
+for (const n of ['impact', 'urgency']) {
+  const f = fieldRows.find((r) => String(r.name).toLowerCase() === n);
+  note('priority matrix', `field ${n}`, f ? await detail('FieldInfo', f.id) : `no FieldInfo named ${n}`);
+}
+for (const id of [27, 28]) note('priority matrix', `lookup ${id} (impact/urgency values?)`, await list('Lookup', { lookupid: String(id) }));
+summary.push(`· priority matrix: ${matrix.length} rules`);
+
+// ---------- 5. categories ----------
+const cats = await list('Category');
+note('categories', 'count', cats.length);
+note('categories', 'list rows (first 8)', cats.slice(0, 8));
+const catFull: Row[] = [];
+for (const c of cats.slice(0, 4)) {
+  const d = await detail('Category', c.id);
+  if (d) catFull.push(d);
+}
+note('categories', 'full (first 4)', catFull);
+// Which ticket types use which category list.
+const typeCats: Row = {};
+for (const t of types.slice(0, 80)) {
   const d = await detail('TicketType', t.id);
-  const id = Number(d?.overridewiththefollowingtemplatewhenloggingmanually ?? -1);
-  if (id > 0 && Object.keys(linked).length < 3) linked[nameOf(t)] = await detail('Template', id);
+  const k = pick(d, /categ/i);
+  if (Object.values(k).some(set)) typeCats[nameOf(t)] = k;
 }
-note('child tickets', 'templates ticket types point at (full)', linked);
-summary.push(`· child tickets: ${withChildren.length} template(s) with children out of ${tpls.length}`);
-
-// ---------- 5. runbooks ----------
-const hooks = await list('Webhook');
-note('runbooks', 'all (name, type)', hooks.map((h) => ({ id: h.id, name: h.name, type: h.type })));
-const own = hooks.filter((h) => !/halo ai/i.test(String(h.name)));
-for (const h of own.slice(0, 2)) note('runbooks', `full: ${h.name}`, await detail('Webhook', h.id));
-summary.push(`· runbooks: ${hooks.length} (${own.length} not Halo AI)`);
+note('categories', 'ticket type category settings', typeCats);
+if (apply && catFull[0]) {
+  const name = `${SAMPLE} category`;
+  const existing = cats.find((c) => String(c.value ?? c.name ?? '') === name || String(c.name ?? '') === name);
+  const body: Row = existing ? { id: existing.id, value: name } : { ...cleanForCreate(catFull[0]), value: name, ...(('name' in catFull[0]) ? { name } : {}) };
+  try {
+    const r = firstRecord(await haloPost('/Category', [body]));
+    const back = r?.id ? await detail('Category', r.id) : null;
+    note('categories', 'sample read-back', { sent: body, back });
+    summary.push(`✓ category sample: id ${back?.id}`);
+  } catch (e) {
+    note('categories', 'sample failed', { error: err(e), sent: body });
+    summary.push(`✗ category sample: ${err(e).slice(0, 150)}`);
+  }
+}
+summary.push(`· categories: ${cats.length}`);
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(file, JSON.stringify(out, null, 2));
