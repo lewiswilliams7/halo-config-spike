@@ -136,7 +136,13 @@ export function needsFor(steps: PlanStep[]): Need[] {
         add({ file: 'template-ticketrule.json', resource: 'TicketRules', why: 'ticket rule', accept: (d) => Array.isArray(d[SPIKE_MAP.ticketRule.criteria ?? 'criteria']), prefer: (d) => Number(d.use ?? 0) === 0 });
         break;
       case 'ticket_template':
-        add({ file: 'template-template.json', resource: 'Template', why: 'ticket template', accept: () => true });
+        // A parent template (type 1) that already has child tickets, so children copy Halo's own row shape (C1).
+        add({
+          file: 'template-template.json', resource: 'Template', why: 'ticket template',
+          accept: (d) => Number(d.type) === (SPIKE_MAP.childTickets.parentType ?? 1),
+          prefer: (d) => Array.isArray(d.children) && d.children.length > 0,
+          maxDetails: 40,
+        });
         break;
     }
   }

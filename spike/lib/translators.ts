@@ -75,14 +75,15 @@ export const SPIKE_MAP = {
     body: 'body_html' as string | null,
     name: 'name' as string | null,
   },
-  /** An action button that sends an email. Evidence: learn, Outcome has sendemail (a NUMBER: posting true was refused
-   *  with a 400; every action read has 2) and emailtemplate_id. Which number means "send", and who it goes to: not yet. */
+  /** An action button that emails the requester (rule E1). Evidence: learning run 2, all 86 actions: Halo's own "Email
+   *  User" has sendemail 1 ("Send email" ticked), hidesendemail false (box shown), includeto true (To = the ticket's
+   *  user), tooverride "". 0 = box shown unticked, 2 = hidden. Sample 106 kept sendemail 1 and template -100. */
   actionEmail: {
     send: 'sendemail' as string | null,
-    sendValue: null as number | null,
+    sendValue: 1 as number | null,
     template: 'emailtemplate_id' as string | null,
-    recipient: null as string | null,
-    recipientRequester: null as number | string | null,
+    recipient: 'includeto' as string | null,
+    recipientRequester: true as boolean | null,
   },
   /** Ticket rules (routing on matching tickets). Evidence: learn. Halo's own rules 13-16 (use 0 = a ticket rule; 1/2 are
    *  impact/urgency priority rules), and sample rule 27, whose type 23 dropdown criterion Halo stored as sent. */
@@ -100,12 +101,22 @@ export const SPIKE_MAP = {
    *  give a guid id (posting it was refused). Where the number lives on a priority: not yet. */
   rulePriority: {
     setPriority: 'new_priority_id' as string | null,
-    priorityNumberKey: null as string | null,
+    /** Learning run 2: /Priority rows are per SLA ({ slaid, priorityid, name }); priorityid is the level (Urgent in
+     *  SLA 2 and Critical in SLA 3 are both 1), and Halo's rules 14-25 set new_priority_id to it. */
+    priorityNumberKey: 'priorityid' as string | null,
   },
   /** Child tickets raised with a ticket. Evidence: probe found /Template. Nothing about children or the trigger yet. */
+  /** Child tickets (rule C1). Evidence: learning run 2, templates 1 "New Starter Request" and 30 "Leaver Request": a
+   *  parent template (type 1, tickettype_id = the parent's type) holds children[]: templates of type 6 (domain "reqs")
+   *  with name, summary, tickettype_id, team; a child with no creation_rules is raised straight away. The ticket type
+   *  points at the parent through overridewiththefollowingtemplatewhenloggingmanually (New Starter 17 → 1, Leaver 16 →
+   *  30). Writing children inline with the parent is not proven yet: provenOnTrial stays null until learn round 3. */
   childTickets: {
-    children: null as string | null,
-    attach: null as string | null,
+    children: 'children' as string | null,
+    parentType: 1 as number | null,
+    childType: 6 as number | null,
+    attach: 'overridewiththefollowingtemplatewhenloggingmanually' as string | null,
+    provenOnTrial: null as boolean | null,
   },
   /** Show a field only for some answers. Evidence: learn, five form rows on gethandoveruk (Absence Management, Employee
    *  Information Change, Employee Transfer, Grievance x2): a loose field row carries group_visibility_conditions = [{
@@ -140,8 +151,8 @@ export const FEATURES: Feature[] = [
     key: 'emails',
     name: 'email templates and emails sent from action buttons',
     sections: ['emailTemplate', 'actionEmail'],
-    prompt: `- email_template: name, subject, body (plain text; Halo variables only if inventory.email_templates shows them). Use it from an outcome's send_email.
-- outcome create may have send_email: email_template ref (pressing the button emails the requester). outcome set: { send_email: ref } adds that to an EXISTING action.`,
+    prompt: `- email_template: name, subject, body (plain text; may use Halo variables $FAULTID (ticket number), $symptom (summary), $STATUS). Check inventory.email_templates first and reuse one that fits.
+- outcome create may have send_email: email_template ref: when an agent uses the button, the email to the requester opens with "Send email" ticked and that template filled in (E1). outcome set: { send_email: ref } does the same on an EXISTING action. Emails on events (ticket logged, status changed) aren't supported yet.`,
   },
   {
     key: 'ticket_rules',
@@ -153,13 +164,13 @@ export const FEATURES: Feature[] = [
     key: 'rule_priority',
     name: 'ticket rules that set a priority',
     sections: ['rulePriority'],
-    prompt: `- ticket_rule then may also have priority: a priority name from the inventory.`,
+    prompt: `- ticket_rule then may also have priority: a priority LEVEL number from inventory.details.priority_levels (e.g. 2).`,
   },
   {
     key: 'child_tickets',
     name: 'child tickets raised automatically',
     sections: ['childTickets'],
-    prompt: `- ticket_template: name, attach_to: ticket_type ref, children: [{ summary, ticket_type: ref, team?: ref }] (a ticket of attach_to raises these child tickets).`,
+    prompt: `- ticket_template: name, attach_to: ticket_type ref (a ticket type with no template of its own; inventory.details shows it), children: [{ summary, ticket_type: ref, team?: ref }]: every ticket of attach_to raises these child tickets straight away (C1). Child tickets raised in order or on approval aren't supported yet.`,
   },
   {
     key: 'visibility',
@@ -264,7 +275,10 @@ function editFieldRows(rows: Row[], refs: Refs, add: { ref: string; mandatory?: 
   }
   let seq = Math.max(0, ...rows.map((r) => Number(r.seq) || 0));
   for (const f of add) {
-    const id = Number(refs[f.ref]?.id);
+    // A field created earlier in this plan has a placeholder id in the dry run ("<new x>"): keep it as is, so later
+    // checks in the same step can still find the row (a number conversion made it NaN).
+    const raw = refs[f.ref]?.id;
+    const id = typeof raw === 'string' && raw.startsWith('<new') ? raw : Number(raw);
     if (rows.some((r) => sameField(r, f.ref))) continue; // already there (e.g. a re-run): nothing to do
     // Rule F8 (2026-10-23): "Start date" added to a form that already had "Starting Date" in a section.
     const label = String(refs[f.ref]?.row?.label ?? '');
@@ -543,7 +557,7 @@ export interface PlanStep {
   send_email?: string;
   /** ticket_rule: conditions (all must match) and what it sets. */
   when?: RuleCondition[];
-  then?: { team?: string; priority?: string; agent?: string };
+  then?: { team?: string; priority?: number | string; agent?: string };
   /** ticket_template: the ticket type that raises these children, and the children. */
   attach_to?: string;
   children?: { summary: string; ticket_type: string; team?: string }[];
@@ -693,9 +707,11 @@ function setActionEmail(p: Row, templateRef: string, refs: Refs, warn: (m: strin
   const m = SPIKE_MAP.actionEmail;
   if (!m.send || !m.template || m.sendValue === null) return gap('an action\'s email (which sendemail number means send)', warn);
   p[m.send] = m.sendValue;
+  p.hidesendemail = false; // the "Send email" box is shown (as on Halo's Email User)
   p[m.template] = refs[templateRef]?.id;
   if (!m.recipient || m.recipientRequester === null) return gap('who an action\'s email goes to', warn);
   p[m.recipient] = m.recipientRequester;
+  p.tooverride = ''; // no fixed recipient: the ticket's user
 }
 
 // ---------- translators ----------
@@ -1008,7 +1024,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
         const v = SPIKE_MAP.visibility;
         const rows = (out[m.fields as string] as Row[]) ?? keepRows(current[m.fields as string]);
         const names = rowNames(current);
-        const onForm = (ref: string) => rows.find((r) => Number(r.fieldid) === Number(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase()));
+        const onForm = (ref: string) => rows.find((r) => String(r.fieldid) === String(refs[ref]?.id) || (!!refs[ref]?.name && names.get(Number(r.id)) === String(refs[ref]?.name).toLowerCase()));
         for (const c of st.show_field_when) {
           const row = onForm(c.field);
           if (!row) { warn(`show_field_when: "${refs[c.field]?.row?.label ?? refs[c.field]?.name}" isn't placed directly on this form (add it with add_fields; fields inside sections can't be conditional yet)`); continue; }
@@ -1186,6 +1202,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // "Triage Not Required", so every new forward action showed an X. Use the plan's icon, or a neutral one.
       // Evidence for the property: outcome-11 has icon "users" (a Font Awesome name).
       p.icon = step.icon ?? 'arrow-right';
+      // Rule O4 (2026-10-25): the template action's default assignment came along too: sample 106, copied from
+      // "Escalated", defaulted to team 2nd Line Support and agent 1. A new action assigns nothing unless the plan says.
+      Object.assign(p, { defaultteam: '', defaultagent: 0, defaultagent_name: '', defaultpriority: 0 });
       if (step.send_email) setActionEmail(p, step.send_email, refs, warn);
       return p;
     },
@@ -1301,9 +1320,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
         set(p, m.setTeamName, refs[t.team]?.name, 'the team a rule sets (name)', warn);
       }
       if (t.agent) set(p, m.setAgent, refs[t.agent]?.id, 'the agent a rule sets', warn);
-      if (t.priority) {
+      if (t.priority !== undefined) {
         const pm = SPIKE_MAP.rulePriority;
+        const level = Number(t.priority);
         if (!pm.setPriority || !pm.priorityNumberKey) gap('the priority a rule sets (its number)', warn);
+        else if (!Number.isInteger(level) || level < 1) warn(`ticket rule: priority "${t.priority}" isn't a priority level number`);
+        else p[pm.setPriority] = level;
       }
       if (!t.team && !t.agent && !t.priority) warn('ticket rule: sets nothing');
       return p;
@@ -1311,16 +1333,49 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   ticket_template: {
-    // Feature "child_tickets". Evidence: probe 24 Oct found /Template. Everything else waits for a capture.
+    // Feature "child_tickets", rule C1 (SPIKE_MAP.childTickets). Shape from one of the instance's own parent templates.
     resource: 'Template',
     template: 'template-template.json',
+    verifyCreate: (back) => (((back[SPIKE_MAP.childTickets.children ?? 'children'] as Row[]) ?? []).length ? [] : ['template saved without its child tickets']),
     build: (step, refs, warn) => {
+      const src = runtime().templates.get(templateFileFor(step, 'template-template.json')) ?? {};
       const p = fromTemplate(templateFileFor(step, 'template-template.json'), 'Template');
       const m = SPIKE_MAP.childTickets;
       p.name = step.name;
-      set(p, m.children, (step.children ?? []).map((c) => ({ summary: c.summary, tickettype_id: refs[c.ticket_type]?.id, team: refs[c.team ?? '']?.name })), 'child tickets', warn);
-      if (step.attach_to) set(p, m.attach, refs[step.attach_to]?.id, 'which ticket type raises the child tickets', warn);
+      if (m.parentType !== null) p.type = m.parentType;
+      // The source's own summary uses its own fields ($CFfirstName ...): ours is the ticket's own summary.
+      p.summary = '';
+      const attach = refs[step.attach_to ?? ''];
+      if (!attach) warn('ticket_template: attach_to is missing');
+      p.tickettype_id = attach?.id;
+      if (!m.children || m.childType === null) { gap('child tickets', warn); return p; }
+      // Children: shaped like the source's first child (cleaned), each a type 6 template raised straight away.
+      const shape = cleanForCreate(((src[m.children] as Row[]) ?? [])[0] ?? {});
+      p[m.children] = (step.children ?? []).map((c) => ({
+        ...shape,
+        name: c.summary,
+        summary: c.summary,
+        type: m.childType,
+        tickettype_id: refs[c.ticket_type]?.id,
+        team: c.team ? refs[c.team]?.name ?? '' : '',
+        creation_rules: [],
+        rule_count: 0,
+      }));
+      if (!(step.children ?? []).length) warn('ticket_template: no child tickets');
+      // C1: a ticket type that already raises a template would have it replaced: refuse, don't overwrite.
+      const current = Number(attach?.row?.[m.attach ?? ''] ?? -1);
+      if (current > 0) warn(`"${attach?.name}" already uses template ${current} when logged; Enact won't replace it`);
       return p;
+    },
+    // C1: point the ticket type at the new template, so its tickets raise the children.
+    relatedPreview: (step, refs) => [`${refs[step.attach_to ?? '']?.name ?? step.attach_to} uses this template when logged`],
+    related: async (record, step, refs) => {
+      const m = SPIKE_MAP.childTickets;
+      const tt = refs[step.attach_to ?? ''];
+      if (!m.attach || !tt?.id) return [];
+      const current = firstRecord(await runtime().halo.get(`/TicketType/${tt.id}`, { includedetails: 'true' })) ?? {};
+      if (Number(current[m.attach]) === Number(record.id)) return []; // re-run
+      return [{ resource: 'TicketType', label: `${tt.name} uses template "${record.name}"`, payload: { id: tt.id, [m.attach]: record.id } }];
     },
   },
 };

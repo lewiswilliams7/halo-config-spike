@@ -182,7 +182,21 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
         if (steps.find((x) => x.id === c.ticket_type)?.object !== 'ticket_type') errors.push(`step "${s.id}": when.ticket_type must be a ticket_type step (got "${c.ticket_type}")`);
       } else dropdownAnswer(s.id, c.field, c.equals, 'a ticket rule condition');
     }
-    if (!s.then?.team && !s.then?.agent && !s.then?.priority) errors.push(`step "${s.id}": the ticket rule doesn't set anything (then.team, then.agent)`);
+    if (!s.then?.team && !s.then?.agent && s.then?.priority === undefined) errors.push(`step "${s.id}": the ticket rule doesn't set anything (then.team, then.agent, then.priority)`);
+    if (s.then?.priority !== undefined && !(Number.isInteger(Number(s.then.priority)) && Number(s.then.priority) >= 1))
+      errors.push(`step "${s.id}": then.priority must be a priority LEVEL number from inventory.details.priority_levels (got "${s.then.priority}")`);
+  }
+
+  // C1: child tickets hang off one ticket type and are each raised as a ticket of some type.
+  for (const s of steps) {
+    if (s.object !== 'ticket_template') continue;
+    if (steps.find((x) => x.id === s.attach_to)?.object !== 'ticket_type') errors.push(`step "${s.id}": attach_to must be a ticket_type step (got "${s.attach_to}")`);
+    if (!s.children?.length) errors.push(`step "${s.id}": a ticket template needs at least one child ticket`);
+    for (const c of s.children ?? []) {
+      if (!c.summary?.trim()) errors.push(`step "${s.id}": every child ticket needs a summary`);
+      if (steps.find((x) => x.id === c.ticket_type)?.object !== 'ticket_type') errors.push(`step "${s.id}": child "${c.summary}" needs ticket_type: a ticket_type step (got "${c.ticket_type}")`);
+      if (c.team && steps.find((x) => x.id === c.team)?.object !== 'team') errors.push(`step "${s.id}": child "${c.summary}" team must be a team step`);
+    }
   }
 
   // V1: a conditional field tests a dropdown's answer; the field and the dropdown must be on that form.

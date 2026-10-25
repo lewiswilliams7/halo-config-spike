@@ -50,6 +50,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
   let teamsList: Row[] = [];
   let agentRows: Row[] = [];
   let outcomesList: Row[] = [];
+  let priorityRows: Row[] = [];
   const ticketTypes = await list('TicketType');
   const fields = await list('FieldInfo', (r) => Number(r.id) > 0 && nameOf(r).startsWith('CF'));
   const fieldGroups = await list('FieldGroup');
@@ -86,7 +87,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
     statuses: statuses.map(nameOf),
     actions: (outcomesList = await list('Outcome')).map(nameOf),
     slas: slas.map(nameOf),
-    priorities: (await list('Priority')).map(nameOf),
+    priorities: [...new Set((priorityRows = await list('Priority')).map(nameOf))],
     approval_processes: approvalProcesses.map(nameOf),
     approval_groups: cabs.map(nameOf),
     teams: (teamsList = await list('Team')).map(nameOf),
@@ -127,6 +128,8 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
       sla: slaName.get(Number(d.default_sla)),
       approval: d.approval_process_name || undefined,
       workflow: d.workflow_name || undefined,
+      // C1: a ticket type that raises a template (and its child tickets) when logged.
+      template_when_logged: Number(d.overridewiththefollowingtemplatewhenloggingmanually) > 0 ? Number(d.overridewiththefollowingtemplatewhenloggingmanually) : undefined,
       ...(Object.keys(groups).length ? { groups } : {}),
       ...(loose.length ? { fields: loose } : {}),
     };
@@ -184,6 +187,10 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
       approval_groups,
       approval_processes,
       sla_targets,
+      // TR2: rules set a priority LEVEL (Priority rows' priorityid); each SLA names its levels its own way.
+      priority_levels: Object.fromEntries(
+        [...new Set(priorityRows.map((r) => Number(r.priorityid)).filter((n) => n > 0))].sort().map((n) => [n, [...new Set(priorityRows.filter((r) => Number(r.priorityid) === n).map(nameOf))].join(' / ')]),
+      ),
     },
   };
 }

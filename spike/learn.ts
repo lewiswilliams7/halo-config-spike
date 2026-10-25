@@ -4,12 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 2 (24 Oct): round 1 settled email templates, ticket rules and conditional fields (NOTES.md). This round:
- *   - proves ticket rules and conditional fields with the REAL builder (dry run gate B1, then apply, then read back)
- *   - finds which sendemail number means "send" and who an action's email goes to
- *   - finds a priority's number (rules set new_priority_id as a number)
- *   - reads every ticket template, looking for child tickets (incl. the ones New Starter / Leaver point at)
- *   - reads runbooks (Webhook records) that aren't Halo's own AI agents
+ * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
+ * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
+ * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
  * Writes go through haloPost (.env safety switches, trial only). Never deletes. Re-runs reuse samples by name.
  * Writes SEND-TO-CLAUDE.txt.
  */
@@ -71,38 +68,64 @@ for (const f of [...fieldRows.filter((r) => /licen/i.test(String(r.label ?? r.na
 const option = (dropdown?.values as Row[] | undefined)?.at(-1);
 note('reference', 'picked', { ticket_type: ticketType && nameOf(ticketType), team: team && nameOf(team), dropdown: dropdown && `${dropdown.name} "${dropdown.label}" = ${option?.name}` });
 
-// ---------- 1. prove ticket rules and conditional fields with the real builder ----------
-if (apply && ticketType && team && dropdown && option) {
-  const plan: Plan = {
-    request: 'Enact learning run: prove ticket rules and conditional fields',
-    steps: [
-      { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
-      { id: 'dd', object: 'field', action: 'reuse', match: { name: String(dropdown.name) } },
-      { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(team) } },
-      { id: 'reason', object: 'field', action: 'create', name: 'CFzzEnactSampleReason', label: `${SAMPLE} reason`, type: 'memo' },
-      { id: 'rule', object: 'ticket_rule', action: 'create', name: `${SAMPLE} routing`, when: [{ ticket_type: 'tt' }, { field: 'dd', equals: String(option.name) }], then: { team: 'team' } },
-      { id: 'form', object: 'ticket_type', action: 'update', match: { name: nameOf(ticketType) }, set: { add_fields: [{ ref: 'reason' }], show_field_when: [{ field: 'reason', when: 'dd', equals: String(option.name) }] } },
-    ],
-  };
-  // The dropdown must be on the form for the condition to make sense; if it isn't, the builder says so (and stops).
+// ---------- 1. prove every switched-on area with the real builder (round 3) ----------
+async function prove(label: string, plan: Plan, check: (log: Row[]) => Promise<Row>) {
   const lines: string[] = [];
   try {
     const result = await withRuntime({ halo: envHalo, templates: fileTemplates }, () =>
       buildWithGate(plan, { apply: true, emit: (e) => { if (e.type === 'line') lines.push(e.text); } }),
     );
-    note('builder proof', 'result', { ok: result.ok, refused: result.refused, problems: result.problems, log: result.log.map((l) => ({ step: l.step, outcome: l.outcome, id: l.id, error: l.error, warnings: l.warnings, detail: l.detail })) });
-    note('builder proof', 'output', lines);
-    const rule = result.log.find((l) => l.step === 'rule');
-    if (rule?.id) note('builder proof', 'rule read-back', await detail('TicketRules', rule.id));
-    const form = await detail('TicketType', ticketType.id);
-    note('builder proof', 'form rows with conditions', ((form?.fields as Row[]) ?? []).filter((r) => set(r.group_visibility_conditions)).map((r) => ({ id: r.id, fieldid: r.fieldid, conditions: r.group_visibility_conditions })));
-    summary.push(result.ok ? '✓ builder proof: ticket rule and conditional field built and checked on the trial' : `✗ builder proof: ${[...result.problems, ...result.log.filter((l) => l.error).map((l) => `${l.step}: ${l.error}`)].join(' | ').slice(0, 300)}`);
+    const log = result.log.map((l) => ({ step: l.step, outcome: l.outcome, id: l.id, error: l.error, warnings: l.warnings, detail: l.detail }));
+    note('builder proof', label, { ok: result.ok, refused: result.refused, problems: result.problems, log, output: lines, read_back: result.ok ? await check(log) : null });
+    summary.push(result.ok ? `✓ ${label}: built and checked on the trial` : `✗ ${label}: ${[...result.problems, ...log.filter((l) => l.error).map((l) => `${l.step}: ${l.error}`)].join(' | ').slice(0, 300)}`);
   } catch (e) {
-    note('builder proof', 'error', err(e));
-    summary.push(`✗ builder proof: ${err(e).slice(0, 200)}`);
+    note('builder proof', `${label} error`, err(e));
+    summary.push(`✗ ${label}: ${err(e).slice(0, 200)}`);
   }
 }
+const idOf = (log: Row[], step: string) => log.find((l) => l.step === step)?.id;
 
+if (apply && ticketType && team && dropdown && option) {
+  const tt = nameOf(ticketType);
+  await prove('ticket rule with priority, and a conditional field', {
+    request: 'Enact learning run 3',
+    steps: [
+      { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: tt } },
+      { id: 'dd', object: 'field', action: 'reuse', match: { name: String(dropdown.name) } },
+      { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(team) } },
+      { id: 'reason', object: 'field', action: 'create', name: 'CFzzEnactSampleReason', label: `${SAMPLE} reason`, type: 'memo' },
+      { id: 'rule', object: 'ticket_rule', action: 'create', name: `${SAMPLE} routing`, when: [{ ticket_type: 'tt' }, { field: 'dd', equals: String(option.name) }], then: { team: 'team', priority: 2 } },
+      { id: 'form', object: 'ticket_type', action: 'update', match: { name: tt }, set: { add_fields: [{ ref: 'reason' }], show_field_when: [{ field: 'reason', when: 'dd', equals: String(option.name) }] } },
+    ],
+  }, async (log) => ({
+    rule: await detail('TicketRules', idOf(log, 'rule')),
+    conditional_rows: (((await detail('TicketType', ticketType.id))?.fields as Row[]) ?? []).filter((r) => set(r.group_visibility_conditions)).map((r) => ({ id: r.id, fieldid: r.fieldid, conditions: r.group_visibility_conditions })),
+  }));
+
+  await prove('email template and an action that sends it', {
+    request: 'Enact learning run 3',
+    steps: [
+      { id: 'em', object: 'email_template', action: 'create', name: `${SAMPLE} installed email`, subject: 'Your request $FAULTID: software installed', body: 'Hello,\n\nThe software you asked for ($symptom) is installed.\n\nThanks' },
+      { id: 'btn', object: 'outcome', action: 'create', name: `${SAMPLE} notify installed`, send_email: 'em' },
+    ],
+  }, async (log) => ({ template: await detail('EmailTemplate', idOf(log, 'em')), action: pick(await detail('Outcome', idOf(log, 'btn')), /mail|send|includeto|tooverride|default(team|agent)|outcome$/i) }));
+
+  await prove('child tickets', {
+    request: 'Enact learning run 3',
+    steps: [
+      { id: 'src', object: 'ticket_type', action: 'reuse', match: { name: tt } },
+      { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(team) } },
+      { id: 'zt', object: 'ticket_type', action: 'create', name: `${SAMPLE} request`, based_on: tt },
+      { id: 'kids', object: 'ticket_template', action: 'create', name: `${SAMPLE} children`, attach_to: 'zt', children: [{ summary: `${SAMPLE} child 1`, ticket_type: 'zt', team: 'team' }, { summary: `${SAMPLE} child 2`, ticket_type: 'zt' }] },
+    ],
+  }, async (log) => ({
+    template: await detail('Template', idOf(log, 'kids')),
+    ticket_type_link: pick(await detail('TicketType', idOf(log, 'zt')), /template/i),
+  }));
+}
+
+// Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
+const assigning: Row[] = [];
 // ---------- 2. which sendemail number sends, and who to ----------
 const outcomes = await list('Outcome');
 const combos: Record<string, string[]> = {};
@@ -114,32 +137,13 @@ for (const o of outcomes) {
   const key = `sendemail=${d.sendemail} hidesendemail=${d.hidesendemail} template=${Number(d.emailtemplate_id) > 0 ? 'yes' : 'no'}`;
   (combos[key] ??= []).push(nameOf(d));
   if ((Number(d.sendemail) !== 2 || Number(d.emailtemplate_id) > 0) && emailFull.length < 4) emailFull.push(d);
+  if (String(d.defaultteam ?? '') !== '' || Number(d.defaultagent ?? 0) > 0) assigning.push({ id: d.id, name: nameOf(d), defaultteam: d.defaultteam, defaultagent: d.defaultagent_name ?? d.defaultagent });
   if (!plain && Number(d.systemid ?? 0) === 0 && !/resolv|close|approv|cancel|merge|delete/i.test(nameOf(d))) plain = d;
 }
 note('actions', 'sendemail combinations (action names)', combos);
+note('actions', 'actions with a default team or agent (O4)', assigning);
 note('actions', 'actions that differ (full)', emailFull);
 summary.push(`· actions: ${Object.keys(combos).length} sendemail combinations across ${outcomes.length} actions`);
-if (apply && plain) {
-  const email = (await list('EmailTemplate')).find((t) => String(t.name ?? '').startsWith(SAMPLE));
-  const name = `${SAMPLE} email action`;
-  const existing = outcomes.find((o) => [o.outcome, o.buttonname, o.name].some((v) => String(v ?? '') === name));
-  const payload: Row = {
-    ...(existing ? { id: existing.id } : cleanForCreate(plain)),
-    outcome: name, buttonname: name, systemid: 0, hotkey: '', newstatus: 0,
-    sendemail: 1, hidesendemail: false,
-    ...(email ? { emailtemplate_id: email.id } : {}),
-  };
-  try {
-    const res = firstRecord(await haloPost('/Outcome', [payload]));
-    const back = res?.id ? await detail('Outcome', res.id) : null;
-    note('actions', 'sample (sendemail 1) read-back', back);
-    summary.push(`✓ email action sample: id ${back?.id} (sendemail ${back?.sendemail}, template ${back?.emailtemplate_id})`);
-  } catch (e) {
-    note('actions', 'sample failed', { error: err(e), sent: payload });
-    summary.push(`✗ email action sample: ${err(e).slice(0, 150)}`);
-  }
-}
-
 // ---------- 3. a priority's number ----------
 const prios = await list('Priority');
 note('priorities', 'list rows (first 6)', prios.slice(0, 6));

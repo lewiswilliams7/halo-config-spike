@@ -32,9 +32,9 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 
 | Area | Status | Notes |
 |---|---|---|
-| Email templates, and emails sent from an action | 🔒 | Templates proven (sample -100). Action email off: which `sendemail` number sends, and who to |
-| Ticket rules: route to a team or agent on ticket type and answers | 🧪 | TR1, TR2. Switched on; proof run on the trial pending (`npm run learn -- --apply`). Setting a priority: 🔒 (needs the priority number) |
-| Child tickets (ticket templates) | 🔒 | Built, switched off until captured (B2). Gaps: how children and the trigger are stored |
+| Email templates, and emails sent from an action | 🧪 | E1, O4. Switched on; builder proof on the trial pending (learn round 3). Emails on events (notifications): ⬜ |
+| Ticket rules: route to a team or agent, set a priority, on ticket type and answers | 🧪 | TR1, TR2. Switched on; builder proof on the trial pending (learn round 3) |
+| Child tickets raised when a ticket is logged | 🔒 | C1. Built from templates 1 and 30; switched on once learn round 3 proves inline children. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
 | Escalation and SLA breach notifications | ⬜ | |
 | Workdays / business hours | ⬜ | Workday create via REST unconfirmed |
@@ -47,7 +47,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 
 | Area | Status | Notes |
 |---|---|---|
-| Runbooks / integrations / automations | 🔒 | Capture only (B2); nothing built yet |
+| Runbooks / integrations / automations | 🔒 | Read: runbooks are Webhook records (event triggers, flowchart steps like workflows). Not built: no runbook made by hand to learn from yet |
 | Reports and dashboards | ⬜ | Halo already has an AI report builder |
 | CMDB / asset types | ⬜ | |
 | Contracts, billing, invoicing (PSA) | ⬜ | |
