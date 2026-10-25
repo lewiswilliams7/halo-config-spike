@@ -4,6 +4,10 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 22 (25 Oct): children in order or after approval. Halo's own templates have none, but every child carries
+ * enable_task_dependencies / updateparent_* keys and the parent a child_template_type. On the sample parent 46 only:
+ * switch each on, one at a time, and read back what Halo adds; then log a ticket that needs approval and one that
+ * doesn't, and see when their children appear.
  * Round 21 (25 Oct): child tickets in order or after approval, read from the templates Halo's own ticket types raise
  * (round 20 listed /Template, which didn't include them). Read-only.
  * Round 20 (25 Oct): the sample approval's stage renamed in words (P9), and how Halo's OWN ticket templates raise child
@@ -48,7 +52,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 21, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 22, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -369,6 +373,53 @@ if (apply) {
         summary.push(`· approval check: ticket ${tid} (admin rights ${answer}) status ${v.status}, approval ${JSON.stringify(v.approval).slice(0, 80)}`);
       } catch (e) {
         note('approval experiments', `ticket answering ${answer} failed`, err(e));
+      }
+    }
+
+    // Round 22: children after approval / in order, on sample parent template 46 only.
+    const area22 = 'child ticket experiments';
+    const parentId = Number((await detail('TicketType', zType.id))?.overridewiththefollowingtemplatewhenloggingmanually ?? 0);
+    if (parentId > 0) {
+      const flat = (r: Row | null) => Object.fromEntries(Object.entries(r ?? {}).filter(([k, v]) => k !== 'children' && k !== 'customfields' && (typeof v !== 'object' || v === null)));
+      const diff = (a: Row, b: Row) => Object.fromEntries(Object.keys({ ...a, ...b }).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => [k, { was: a[k], now: b[k] }]));
+      const kidsOf = async () => Promise.all((((await detail('Template', parentId))?.children as Row[]) ?? []).map(async (k) => ({ id: k.id, full: await detail('Template', k.id), row: k })));
+      for (const [label, target, body] of [
+        ['parent child_template_type 1', 'parent', { child_template_type: 1 }],
+        ['parent enable_task_dependencies', 'parent', { enable_task_dependencies: true }],
+        ['child 2 enable_task_dependencies', 'child2', { enable_task_dependencies: true }],
+      ] as [string, string, Row][]) {
+        try {
+          const kids = await kidsOf();
+          const id = target === 'parent' ? parentId : kids[1]?.id;
+          if (!id) continue;
+          const before = await detail('Template', id);
+          const kidRowsBefore = kids.map((k) => k.row);
+          await haloPost('/Template', [{ id, ...body }]);
+          const after = await detail('Template', id);
+          const kidRowsAfter = (await kidsOf()).map((k) => k.row);
+          note(area22, label, {
+            template: id,
+            changed: diff(flat(before), flat(after)),
+            new_keys: Object.keys(after ?? {}).filter((k) => !(k in (before ?? {}))),
+            child_rows_changed: kidRowsAfter.map((r, i) => diff(kidRowsBefore[i] ?? {}, r)).filter((d) => Object.keys(d).length),
+            child_row_keys: Object.keys(kidRowsAfter[0] ?? {}),
+          });
+        } catch (e) {
+          note(area22, `${label} failed`, err(e));
+        }
+      }
+      // At work: a ticket that waits for approval (Yes) and one that doesn't (No). When do their children appear?
+      for (const answer of ['Yes', 'No']) {
+        try {
+          const tid = await logTicket(answer);
+          await new Promise((r) => setTimeout(r, 12000));
+          const t = await detail('Tickets', tid);
+          const kids = extractList(await haloGet('/Tickets', { parent_id: String(tid), count: '20' }).catch(() => ({}))).filter((k) => Number(k.parent_id) === Number(tid));
+          note(area22, `ticket answering ${answer}`, { ticket: tid, status_id: t?.status_id, approval: pick(t, /approv/i), child_count: t?.child_count, children: kids.map((k) => pick(k, /^(id|summary|status_id|dateoccurred)$/)) });
+          summary.push(`· children check: ticket ${tid} (${answer}) status ${t?.status_id}, ${t?.child_count ?? kids.length} children after 12s`);
+        } catch (e) {
+          note(area22, `ticket answering ${answer} failed`, err(e));
+        }
       }
     }
   }
