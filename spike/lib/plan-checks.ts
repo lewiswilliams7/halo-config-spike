@@ -2,7 +2,8 @@
  * Deterministic plan checks for rules M5 to M7 (HALO_RULES.md). The model can ignore a prompt rule; it can't get
  * past these. Keep identical to the app's lib/specflow/plan-checks.ts (only the import line differs).
  */
-import { NON_MOVING_ACTION, featureReady, featuresOf, refsOf, type Plan, type PlanStep } from './translators.js';
+import { NON_MOVING_ACTION, SPIKE_MAP, featureReady, featuresOf, refsOf, type Plan, type PlanStep } from './translators.js';
+import { brandProblems, variablesIn } from './email-brand.js';
 
 export type CheckContext = {
   /** Custom field name to its inventory details: '"Label" dropdown: a | b'. */
@@ -81,6 +82,18 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   for (const s of steps) {
     for (const f of featuresOf(s).filter((x) => !featureReady(x)))
       errors.push(`step "${s.id}" uses ${f.name}, which the builder can't do yet. Remove it and describe it in unsupported.`);
+  }
+
+  // EM1: a branded email needs a hex colour and an https PNG/JPG logo. EM2: only the $variables Halo's own templates use.
+  const known = SPIKE_MAP.emailVariables.known?.map((v) => v.toLowerCase());
+  for (const s of steps) {
+    if (s.object !== 'email_template') continue;
+    for (const p of brandProblems(s.brand)) errors.push(`step "${s.id}": ${p}.`);
+    if (!known) continue;
+    const text = [s.subject, s.body, s.set?.subject, s.set?.body].filter(Boolean).join(' ');
+    const unknown = variablesIn(text).filter((v) => !known.includes(v.toLowerCase()));
+    if (unknown.length)
+      errors.push(`step "${s.id}": ${unknown.join(', ')} ${unknown.length === 1 ? "isn't a variable" : "aren't variables"} Halo uses. Use only: ${SPIKE_MAP.emailVariables.known!.join(', ')}.`);
   }
 
   // M5: a threshold is its own two-option field; never fold it into another field's options.

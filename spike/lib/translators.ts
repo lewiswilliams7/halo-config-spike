@@ -10,6 +10,7 @@
  * Values marked INFERRED are best guesses from evidence: confirm in the UI (NOTES.md).
  */
 import { cleanForCreate } from './clean.js';
+import { type EmailBrand, brandedEmail, textToHtml } from './email-brand.js';
 import { extractList, firstRecord, runtime } from './runtime.js';
 
 export const SPIKE_MAP = {
@@ -74,6 +75,16 @@ export const SPIKE_MAP = {
     subject: 'header_text' as string | null,
     body: 'body_html' as string | null,
     name: 'name' as string | null,
+  },
+  /** Branded emails (rule EM1): does Halo keep Enact's table layout, inline styles, logo <img> and the data-enact-brand
+   *  marker as sent? Unknown until learn round 15 reads a branded sample back. Until then branding stays off. */
+  emailBrand: {
+    keptByHalo: null as boolean | null,
+  },
+  /** Halo $variables (rule EM2), case-insensitive. Filled from the variables Halo's OWN templates use (learn round 15),
+   *  never from a guess. While null, the planner gets the three seen so far and nothing is refused. */
+  emailVariables: {
+    known: null as string[] | null,
   },
   /** An action button that emails the requester (rule E1). Evidence: learning run 2, all 86 actions: Halo's own "Email
    *  User" has sendemail 1 ("Send email" ticked), hidesendemail false (box shown), includeto true (To = the ticket's
@@ -204,7 +215,7 @@ export const FEATURES: Feature[] = [
     key: 'emails',
     name: 'email templates and emails sent from action buttons',
     sections: ['emailTemplate', 'actionEmail'],
-    prompt: `- email_template: name, subject, body (plain text; may use Halo variables $FAULTID (ticket number), $symptom (summary), $STATUS). Check inventory.email_templates first and reuse one that fits.
+    prompt: `- email_template: name, subject, body (plain text, blank line between paragraphs; Halo variables: ${emailVariablePrompt()}). Don't add a logo, colours or a signature: the workspace's branding is added by the builder. Check inventory.email_templates first and reuse one that fits.
 - outcome create may have send_email: email_template ref: when an agent uses the button, the email to the requester opens with "Send email" ticked and that template filled in (E1). outcome set: { send_email: ref } does the same on an EXISTING action. Emails on events (ticket logged, status changed) aren't supported yet.`,
   },
   {
@@ -256,6 +267,12 @@ export const FEATURES: Feature[] = [
     prompt: `- ticket_type set may have show_field_when: [{ field: ref of a field placed DIRECTLY on that form (not in a section), when: ref of a DROPDOWN field on the same form, equals: ONE of its options }]: the field shows only for that answer (V1). Add the field with add_fields first if it isn't on the form. Sections can't be made conditional yet.`,
   },
   {
+    key: 'email_branding',
+    name: 'branded email layouts (logo, colour and footer)',
+    sections: ['emailBrand'],
+    prompt: '',
+  },
+  {
     key: 'runbooks',
     name: 'runbooks and integrations',
     sections: ['runbook'],
@@ -270,6 +287,12 @@ export function featureGaps(f: Feature): string[] {
 export const featureReady = (f: Feature) => featureGaps(f).length === 0;
 /** Planner lines for the features that are ready. */
 export const readyFeaturePrompt = () => FEATURES.filter(featureReady).map((f) => f.prompt).filter(Boolean).join('\n');
+/** The Halo variables the planner may use: the evidenced list once learn has read it, else the three seen so far. */
+export function emailVariablePrompt(): string {
+  const known = SPIKE_MAP.emailVariables.known;
+  if (!known) return '$FAULTID (ticket number), $symptom (summary), $STATUS';
+  return `${known.join(', ')}. Use no others`;
+}
 /** Plain names of the features not ready yet, for the planner's "unsupported" guidance. */
 export const notReadyFeatureNames = () => FEATURES.filter((f) => !featureReady(f)).map((f) => f.name);
 
@@ -285,6 +308,7 @@ export function featuresOf(step: PlanStep): Feature[] {
   if (step.object === 'notification') keys.add('notifications');
   if (step.object === 'ticket_template') keys.add('child_tickets');
   if (step.set?.show_field_when?.length) keys.add('visibility');
+  if (step.brand) keys.add('email_branding');
   return FEATURES.filter((f) => keys.has(f.key));
 }
 
@@ -556,6 +580,8 @@ export interface PlanStep {
   object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification';
   action: 'create' | 'reuse' | 'update';
   name?: string;
+  /** email_template: the workspace's branding (rule EM1). Added by the app or the run, never by the planner. */
+  brand?: EmailBrand;
   label?: string;
   type?: string;
   options?: string[];
@@ -1354,7 +1380,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const m = SPIKE_MAP.emailTemplate;
       set(p, m.name, step.name, 'email template name', warn);
       set(p, m.subject, step.subject ?? step.name, 'email subject', warn);
-      set(p, m.body, toHtml(step.body ?? ''), 'email body', warn);
+      set(p, m.body, step.brand ? brandedEmail(step.body ?? '', step.brand) : toHtml(step.body ?? ''), 'email body', warn);
       // The copied template's designer content and plain-text copy would otherwise still be the source's (Halo
       // re-derives body_text from body_html: sample -100).
       p.design = { design: '', html: p[m.body as string] };
@@ -1365,7 +1391,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const m = SPIKE_MAP.emailTemplate;
       const out: Row = {};
       if (step.set?.subject) set(out, m.subject, step.set.subject, 'email subject', warn);
-      if (step.set?.body) set(out, m.body, toHtml(step.set.body), 'email body', warn);
+      if (step.set?.body) set(out, m.body, step.brand ? brandedEmail(step.set.body, step.brand) : toHtml(step.set.body), 'email body', warn);
       if (!Object.keys(out).length) warn('update: nothing to set');
       return out;
     },
@@ -1590,11 +1616,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
 };
 
 /** Plain text (paragraphs split by blank lines) to simple HTML for an email body. HTML passes through. */
-function toHtml(text: string): string {
-  if (/<\w+[^>]*>/.test(text)) return text;
-  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return text.split(/\n\s*\n/).map((para) => `<p>${esc(para).replace(/\n/g, '<br>')}</p>`).join('');
-}
+const toHtml = (text: string) => textToHtml(text);
 
 /** Every ref a step points at, so the builder can check order before running. */
 export function refsOf(step: PlanStep): string[] {
