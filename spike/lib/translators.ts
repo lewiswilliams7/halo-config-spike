@@ -161,7 +161,8 @@ export const SPIKE_MAP = {
   notification: {
     /** Learning run 7: notification 31 subscribed 8 agents through copied roles (N2). Run 8: notification 32 reached
      *  only the agent asked for, no roles. */
-    events: { new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
+    /** 3 = "New Ticket Logged" (the event Halo's own runbook triggers use). */
+    events: { new_ticket: 3, new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
     /** Off again (25 Oct, Lewis): a notification with no conditions fires for EVERY matching ticket, and consultants
      *  notify a team, not named agents (N3).
      *  Conditions: learning run 9, the runbook triggers are notification records with conditions[] { fieldname
@@ -171,7 +172,9 @@ export const SPIKE_MAP = {
      *  notification it keeps conditions (rows as above) and team_id (read back as team_name "Software Licensing"). */
     conditions: 'conditions' as string | null,
     teamRecipient: 'team_id' as string | null,
-    /** Whether team_id means "tell the team's agents" in practice: Lewis's check on a real ticket (pending). */
+    /** Rule N5 (Lewis, 25 Oct): team_id only FILTERS which tickets count; nobody is told unless subscribed. Notification
+     *  34 (team Software Licensing, no agents) sent nothing on event 2 or 3. So the team's members are subscribed as
+     *  agents (direct subscriptions work: notification 32) and team_id stays as the filter. Proof pending (round 13). */
     teamMeaningChecked: null as boolean | null,
     provenOnTrial: true as boolean | null,
   },
@@ -230,7 +233,7 @@ export const FEATURES: Feature[] = [
     key: 'notifications',
     name: 'agent notifications on events',
     sections: ['notification'],
-    prompt: `- notification (alerts AGENTS, not requesters): name, event: "new_ticket_for_team" | "p1_logged" | "updated_by_user" | "reassigned" | "mentioned", by: "popup" | "email", team: team ref (who is told), when: [{ ticket_type: ref } and/or { field: DROPDOWN ref, equals: option }] (always scope it: N3). Other events aren't supported yet.`,
+    prompt: `- notification (alerts AGENTS, not requesters): name, event: "new_ticket" | "new_ticket_for_team" | "p1_logged" | "updated_by_user" | "reassigned" | "mentioned", by: "popup" | "email", team: team ref (its members are told, and only that team's tickets count), agents?: [agent refs] (told as well), when: [{ ticket_type: ref } and/or { field: DROPDOWN ref, equals: option }] (always scope it: N3). Other events aren't supported yet.`,
   },
   {
     key: 'rule_priority',
@@ -1476,7 +1479,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // N2: only the agents asked for, and no one subscribed through a role.
     verifyCreate: (back) => {
       const out: string[] = [];
-      if (!((back.agents as Row[]) ?? []).length && !String(back.team_name ?? '') && !Number(back.team_id ?? 0)) out.push('notification saved with nobody subscribed');
+      if (!((back.agents as Row[]) ?? []).length) out.push('notification saved with nobody subscribed: nobody would be told (N5)');
       if (!((back.conditions as Row[]) ?? []).length) out.push('notification saved without conditions (N3)');
       if (((back.roles as Row[]) ?? []).length || ((back.user_roles as Row[]) ?? []).length) out.push(`notification is also sent to whole roles (${((back.roles as Row[]) ?? []).map((r) => r.role_name).join(', ')})`);
       const extra = ((back.agents as Row[]) ?? []).filter((a) => String(a.role_name ?? '') !== '');
@@ -1491,7 +1494,15 @@ export const translators: Record<PlanStep['object'], Translator> = {
       if (!event) warn(`notification: event "${step.event}" isn't one Enact knows (${Object.keys(m.events ?? {}).join(', ')})`);
       else p.eventno = event;
       p.delivery_method = step.by === 'email' ? 1 : 0;
-      p.agents = (step.agents ?? []).map((a) => ({ agent_id: refs[a]?.id }));
+      // N5: tell the team's members (subscribed directly) plus any agents named; the team itself is only a filter.
+      const teamRow = refs[step.team ?? '']?.row;
+      const members = ((teamRow?.agents as Row[]) ?? []).map((a) => Number(a.agent_id)).filter((n) => n > 0);
+      const named = (step.agents ?? []).map((a) => refs[a]?.id);
+      if (step.team && !teamRow) warn(`notification: the members of "${refs[step.team]?.name}" aren't known (a team created in this plan); name the agents too`);
+      if (step.team && teamRow && !members.length) warn(`notification: "${refs[step.team]?.name}" has no members to tell`);
+      const ids: unknown[] = [];
+      for (const id of [...members, ...named]) if (id !== undefined && !ids.some((x) => String(x) === String(id))) ids.push(id);
+      p.agents = ids.map((id) => ({ agent_id: id }));
       const after: Row = {};
       if (step.team) set(after, m.teamRecipient, refs[step.team]?.id, 'which team a notification tells', warn);
       if (!(step.agents ?? []).length && !step.team) warn('notification: nobody to notify');

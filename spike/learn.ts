@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 12 (25 Oct): the builder makes a team notification scoped to a ticket type (conditions and team saved after
- * creation, N4). The ticket check and earlier proofs re-run as regression checks.
+ * Round 13 (25 Oct): a notification that tells a team's members (subscribed directly), with the team and ticket type
+ * as filters (N5), on 'new ticket logged'. The ticket check and earlier proofs re-run as regression checks.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -158,26 +158,23 @@ note('tickets', 'recent sample-related tickets (what the builds did)', seen);
 note('tickets', 'keys on a ticket (first)', recent[0] ? Object.keys(recent[0]) : []);
 summary.push(`· tickets: ${seen.length} recent sample-related tickets read`);
 
-// ---------- round 12: the builder makes a scoped team notification (N3, N4) ----------
+// ---------- round 13: team members are told, the team filters (N5) ----------
 if (apply && ticketType) {
   const teams = await list('Team');
   const slTeam = teams.find((t) => /software licen/i.test(nameOf(t))) ?? teams[0];
   if (slTeam) {
-    await prove('notification for a team, on one ticket type', {
-      request: 'Enact learning run 12',
+    await prove("notification to a team's members, new ticket, one ticket type", {
+      request: 'Enact learning run 13',
       steps: [
         { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
         { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(slTeam) } },
-        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 4`, event: 'new_ticket_for_team', by: 'popup', team: 'team', when: [{ ticket_type: 'tt' }] },
+        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 5`, event: 'new_ticket', by: 'popup', team: 'team', when: [{ ticket_type: 'tt' }] },
       ],
     }, async (log) => {
       const n = await detail('Notification', idOf(log, 'n'));
-      return { team_name: n?.team_name, team_id: n?.team_id, type: n?.type, agents: ((n?.agents as Row[]) ?? []).map((a) => a.agent_name), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), conditions: n?.conditions, eventno: n?.eventno };
+      return { team_name: n?.team_name, eventno: n?.eventno, delivery_method: n?.delivery_method, agents: ((n?.agents as Row[]) ?? []).map((a) => `${a.agent_name} (${a.role_name || 'direct'})`), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), conditions: ((n?.conditions as Row[]) ?? []).map((c) => `${c.fieldname} = ${c.value_display}`) };
     });
   }
-  // Who is in that team (for the real-ticket check).
-  const t = slTeam ? await detail('Team', slTeam.id) : null;
-  note('notifications', 'team members', ((t?.agents as Row[]) ?? []).map((a) => a.agent_name ?? a.name ?? a.agent_id));
 }
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
