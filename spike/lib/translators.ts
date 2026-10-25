@@ -515,9 +515,15 @@ export function stageName(a: Approver, refs: Refs): string {
 
 /** Every name a stage may already have in Halo: today's, and the "Rules: <field name> is <answer>" of builds before P9. */
 export function stageNames(a: Approver, refs: Refs): string[] {
-  const who = (ref?: string) => refs[ref ?? '']?.name ?? ref ?? '';
-  const legacy = 'rules' in a ? [`Rules: ${a.rules.map((r) => `${refs[r.field]?.row?.label ?? who(r.field)} is ${r.equals}`).join(', ')}`.slice(0, 100)] : [];
-  return [stageName(a, refs), ...legacy];
+  if (!('rules' in a)) return [stageName(a, refs)];
+  // A pre-P9 build named the field by whatever it knew then: its label when the field was reused, its CF name when the
+  // same plan created it (no Halo row yet). Recognise both (run 20 added a second stage when only one was checked).
+  const by = (f: (ref: string) => string | undefined) => `Rules: ${a.rules.map((r) => `${f(r.field) ?? r.field} is ${r.equals}`).join(', ')}`.slice(0, 100);
+  const legacy = [
+    by((ref) => (refs[ref]?.row?.label as string | undefined) ?? refs[ref]?.label),
+    by((ref) => refs[ref]?.name),
+  ];
+  return [...new Set([stageName(a, refs), ...legacy])];
 }
 
 /** One approval stage row, shaped like an existing one (rule P3: display labels never copied). */
@@ -1084,6 +1090,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       let seq = Math.max(0, ...rows.map((r) => Number(r.sequence) || 0));
       let changed = false;
       for (const a of add) {
+        // Today's name first: if it's there, the stage is done. Only then look for an old name to rename (P9).
+        if (rows.some((r) => String(r.name) === stageName(a, refs))) continue;
         const there = rows.find((r) => stageNames(a, refs).includes(String(r.name)));
         if (there) {
           // P9: a stage named the old way ("Rules: CFField is Yes") is renamed in place, nothing else changes.

@@ -4,6 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 21 (25 Oct): child tickets in order or after approval, read from the templates Halo's own ticket types raise
+ * (round 20 listed /Template, which didn't include them). Read-only.
  * Round 20 (25 Oct): the sample approval's stage renamed in words (P9), and how Halo's OWN ticket templates raise child
  * tickets in order or after an approval: every child with creation rules, read in full (read-only).
  * Round 19 (25 Oct): approvals that depend on an answer (P7) at work. The builder makes a sample Yes/No dropdown, a
@@ -46,7 +48,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 20, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 21, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -372,24 +374,29 @@ if (apply) {
   }
 }
 
-// Round 20: how Halo's own templates raise children in order or after approval. Every child with creation rules.
-const allTemplates = await list('Template');
-const ordered: Row[] = [];
-for (const t of allTemplates) {
-  const d = await detail('Template', t.id);
-  const kids = (d?.children as Row[]) ?? [];
-  if (!kids.length) continue;
-  for (const k of kids) {
-    const kd = await detail('Template', k.id);
-    const rules = (kd?.creation_rules as Row[]) ?? [];
-    if (rules.length || Number(kd?.child_template_type ?? 0) !== 0 || Number(kd?.automationtype ?? -1) !== -1)
-      ordered.push({ parent: `${t.id} ${nameOf(d ?? {})}`, child: `${k.id} ${nameOf(kd ?? {})}`, child_template_type: kd?.child_template_type, automationtype: kd?.automationtype, rule_count: kd?.rule_count, creation_rules: rules, other: pick(kd, /seq|order|after|approv|dependent|wait|create/i) });
-  }
-  if (ordered.length >= 12) break;
+// Round 21: the templates ticket types raise (overridewiththefollowingtemplatewhenloggingmanually), their children in
+// full: creation rules, child_template_type, automation, and anything about order or approval. Read-only.
+const parentIds = new Set<number>();
+const raisedBy = new Map<number, string[]>();
+for (const t of types) {
+  const d = await detail('TicketType', t.id);
+  const tid = Number(d?.overridewiththefollowingtemplatewhenloggingmanually ?? 0);
+  if (tid > 0) { parentIds.add(tid); raisedBy.set(tid, [...(raisedBy.get(tid) ?? []), nameOf(t)]); }
 }
-note('child tickets', 'children with creation rules (Halo\'s own templates)', ordered);
-note('child tickets', 'parent keys (first with children)', Object.keys((await detail('Template', allTemplates.find((t) => true)?.id)) ?? {}).filter((k) => /child|rule|seq|order|approv/i.test(k)));
-summary.push(`· child tickets: ${ordered.length} children with creation rules read`);
+const childRows: Row[] = [];
+for (const pid of parentIds) {
+  const d = await detail('Template', pid);
+  const kids = (d?.children as Row[]) ?? [];
+  const parentView = { id: pid, name: nameOf(d ?? {}), raised_by: raisedBy.get(pid), child_template_type: d?.child_template_type, approval_id: d?.approval_id, children: kids.length };
+  const kidViews: Row[] = [];
+  for (const k of kids.slice(0, 8)) {
+    const kd = await detail('Template', k.id);
+    kidViews.push({ id: k.id, name: nameOf(kd ?? {}), child_template_type: kd?.child_template_type, automationtype: kd?.automationtype, rule_count: kd?.rule_count, creation_rules: kd?.creation_rules, other: pick(kd, /seq|order|after|approv|depend|wait|create|parent/i) });
+  }
+  childRows.push({ parent: parentView, children: kidViews });
+}
+note('child tickets', 'templates raised by ticket types, with their children', childRows);
+summary.push(`· child tickets: ${parentIds.size} parent templates read, ${childRows.reduce((n, r) => n + ((r.children as Row[]).filter((c) => ((c.creation_rules as Row[]) ?? []).length).length), 0)} children with creation rules`);
 
 // Round 17: where sent emails live. Mailboxes (is outgoing mail set up?) and candidate queue endpoints, read-only.
 const mailboxes = await list('Mailbox');
