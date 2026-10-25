@@ -1647,6 +1647,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // The source's own content never comes along: its summary uses its own fields, its details, custom field
       // values and to-do list are its own.
       Object.assign(p, { summary: '', details: '', details_html: '', customfields: [], todo_list: [] });
+      // CT1 (run 23): at child_template_type 1 Halo raises no children at all. Whatever the source had, it's 0 here.
+      p.child_template_type = 0;
+      p.enable_task_dependencies = false;
       const attach = refs[step.attach_to ?? ''];
       // C2 (2026-10-25): the parent's team came from the source template (Leaver: "Human Resources"), and a template
       // applied when logging sets the ticket's team. The parent keeps the ticket type's own team.

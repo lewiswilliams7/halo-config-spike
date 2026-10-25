@@ -4,6 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 24 (25 Oct): what raises children other than logging (CT1: at child_template_type 1 nothing does), and where
+ * an order between children could live: every action and workflow step read for child / template settings, and
+ * Halo's own API schema if the instance serves it. Read-only.
  * Round 23 (25 Oct): round 22 changed three things at once and then no ticket got children. Now: re-read 4049/4050
  * (late children?), read date_dependencies, put sample 46 back to how it was and check children come back, then
  * switch on ONE thing per ticket (child_template_type 1; task dependencies) and see which one holds children back.
@@ -55,7 +58,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 23, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 24, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -409,12 +412,48 @@ if (apply) {
           note(area22, `${label} failed`, err(e));
         }
       };
+      if (process.argv.includes('--child-trials')) {
       await trial('A: back to how it was', { child_template_type: 0, enable_task_dependencies: false }, { enable_task_dependencies: false });
       await trial('B: child_template_type 1 only', { child_template_type: 1, enable_task_dependencies: false }, { enable_task_dependencies: false });
       await trial('C: task dependencies only (parent and child 2)', { child_template_type: 0, enable_task_dependencies: true }, { enable_task_dependencies: true });
+      }
       await setState({ child_template_type: 0, enable_task_dependencies: false }, { enable_task_dependencies: false });
       note(area22, 'sample 46 left as', pick(await detail('Template', parentId), /^(child_template_type|enable_task_dependencies)$/));
     }
+  }
+}
+
+// Round 24: settings that raise children or link templates, on every action and every workflow step. Read-only.
+const childy = /child|template|createticket|create_ticket|spawn|dependen/i;
+const nonDefault = (v: unknown) => v !== null && v !== undefined && v !== '' && v !== 0 && v !== -1 && v !== false && !(Array.isArray(v) && !v.length);
+const actionHits: Row[] = [];
+const allActions = await list('Outcome');
+for (const a of allActions) {
+  const d = await detail('Outcome', a.id);
+  const hit = Object.fromEntries(Object.entries(d ?? {}).filter(([k, v]) => childy.test(k) && !/email/i.test(k) && nonDefault(v)));
+  if (Object.keys(hit).length) actionHits.push({ action: `${a.id} ${nameOf(a)}`, ...hit });
+}
+note('child tickets', 'actions with child/template settings', { read: allActions.length, hits: actionHits });
+note('child tickets', 'all child/template keys an action has', Object.keys((await detail('Outcome', allActions[0]?.id)) ?? {}).filter((k) => childy.test(k)));
+const flowHits: Row[] = [];
+for (const w of await list('Workflow')) {
+  const d = await detail('Workflow', w.id);
+  for (const st of ((d?.steps as Row[]) ?? [])) {
+    const hit = Object.fromEntries(Object.entries(st).filter(([k, v]) => childy.test(k) && nonDefault(v)));
+    if (Object.keys(hit).length) flowHits.push({ workflow: nameOf(w), step: st.name, ...hit });
+  }
+  if (flowHits.length > 20) break;
+}
+note('child tickets', 'workflow steps with child/template settings', flowHits);
+for (const path of ['/swagger/v1/swagger.json', '/swagger.json', '/openapi.json']) {
+  try {
+    const doc = (await haloGet(path)) as Row;
+    const schemas = ((doc?.components as Row)?.schemas ?? doc?.definitions ?? {}) as Record<string, Row>;
+    const names = Object.keys(schemas).filter((n) => /template|child|dependen/i.test(n)).slice(0, 30);
+    note('child tickets', `api schema ${path}`, Object.fromEntries(names.map((n) => [n, Object.keys((schemas[n]?.properties as Row) ?? {}).filter((k) => childy.test(k) || /order|seq|after|wait|approv/i.test(k))])));
+    break;
+  } catch (e) {
+    note('child tickets', `api schema ${path}`, err(e).slice(0, 100));
   }
 }
 
