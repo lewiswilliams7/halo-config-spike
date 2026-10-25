@@ -21,7 +21,8 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | SLAs: different target per priority | 🧪 | `targets: {"Critical": "4h"}` |
 | Approval processes: line manager | ✅ | P1 |
 | Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
-| Approval groups (CABs) | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
+| Approval groups (CABs) | ✅ | Reuse, and create with members: sample "zz Enact sample IT Security" (run 19) |
+| Approvals that depend on an answer | ✅ | P7, P9. Run 19: rules stage built, Yes ticket waited for the group, No ticket went on |
 | Teams | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
 | Categories, and ticket rules that set one | ✅ | K1. Category 262 and rule 30; tickets 4021-4023 got the category |
 | Priorities | ⬜ | Usually reused |

@@ -499,14 +499,25 @@ function applyButtons(p: Row, add: ButtonChange[], retarget: ButtonChange[], ref
   return changed;
 }
 
-/** A readable, stable name for an approval stage: shown in Halo, and how re-runs recognise a stage already added (U4). */
+/**
+ * A readable, stable name for an approval stage: shown in Halo, and how re-runs recognise a stage already added (U4).
+ * Halo shows it as "<process> - <stage> - <approver>", so a rules stage names only the condition (rule P9).
+ */
 export function stageName(a: Approver, refs: Refs): string {
   const who = (ref?: string) => refs[ref ?? '']?.name ?? ref ?? '';
-  if ('rules' in a) return `Rules: ${a.rules.map((r) => `${refs[r.field]?.row?.label ?? who(r.field)} is ${r.equals}`).join(', ')}`.slice(0, 100);
+  const label = (ref: string) => String(refs[ref]?.row?.label ?? refs[ref]?.label ?? who(ref));
+  if ('rules' in a) return `If ${a.rules.map((r) => `${label(r.field)} is ${r.equals}`).join(', or ')}`.slice(0, 100);
   if ('line_manager' in a) return 'Line manager';
   if ('adhoc' in a) return 'Chosen by the agent';
   if ('agent' in a) return `Approval: ${who(a.agent)}`.slice(0, 100);
   return `Approval: ${who(a.group)}`.slice(0, 100);
+}
+
+/** Every name a stage may already have in Halo: today's, and the "Rules: <field name> is <answer>" of builds before P9. */
+export function stageNames(a: Approver, refs: Refs): string[] {
+  const who = (ref?: string) => refs[ref ?? '']?.name ?? ref ?? '';
+  const legacy = 'rules' in a ? [`Rules: ${a.rules.map((r) => `${refs[r.field]?.row?.label ?? who(r.field)} is ${r.equals}`).join(', ')}`.slice(0, 100)] : [];
+  return [stageName(a, refs), ...legacy];
 }
 
 /** One approval stage row, shaped like an existing one (rule P3: display labels never copied). */
@@ -612,6 +623,8 @@ export interface Ref {
   name?: string;
   /** Full record of a reused object (detail read), so later steps can copy settings from it. */
   row?: Record<string, unknown>;
+  /** The label a plan gave a field it creates, for readable names before Halo has a row for it. */
+  label?: string;
 }
 export type Refs = Record<string, Ref>;
 
@@ -1031,7 +1044,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
       const existing = extractList(await runtime().halo.get('/ApprovalProcessRule')).filter((r) => Number(r.approval_process_id) === Number(record.id)).map((r) => String(r.name));
       for (const [i, a] of wanted.entries()) {
         if (!('rules' in a)) continue;
-        const stage = stages.find((s) => String(s.name) === stageName(a, refs)) ?? (step.action === 'create' ? stages[i] : undefined);
+        const stage = stages.find((s) => stageNames(a, refs).includes(String(s.name))) ?? (step.action === 'create' ? stages[i] : undefined);
         if (!stage?.id) throw new Error(`Approval "${step.name ?? step.match?.name}": the rules stage isn't there after saving, so its rules can't be attached`);
         for (const r of a.rules) {
           const field = refs[r.field];
@@ -1071,7 +1084,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
       let seq = Math.max(0, ...rows.map((r) => Number(r.sequence) || 0));
       let changed = false;
       for (const a of add) {
-        if (rows.some((r) => String(r.name) === stageName(a, refs))) continue;
+        const there = rows.find((r) => stageNames(a, refs).includes(String(r.name)));
+        if (there) {
+          // P9: a stage named the old way ("Rules: CFField is Yes") is renamed in place, nothing else changes.
+          if (String(there.name) !== stageName(a, refs)) { there.name = stageName(a, refs); changed = true; }
+          continue;
+        }
         seq += 10;
         rows.push(stageRow(rows[0], a, refs, seq));
         changed = true;
@@ -1080,7 +1098,7 @@ export const translators: Record<PlanStep['object'], Translator> = {
     },
     verifyUpdate: (back, _changes, step, refs) => {
       const names = ((back.steps as Row[]) ?? []).map((r) => String(r.name));
-      return (step.set?.add_stages ?? []).filter((a) => !names.includes(stageName(a, refs))).map((a) => `approval: stage "${stageName(a, refs)}" not there after saving`);
+      return (step.set?.add_stages ?? []).filter((a) => !stageNames(a, refs).some((n) => names.includes(n))).map((a) => `approval: stage "${stageName(a, refs)}" not there after saving`);
     },
     build: (step, refs, warn) => {
       const p = fromTemplate(templateFileFor(step, 'template-approvalprocess.json'), 'ApprovalProcess');

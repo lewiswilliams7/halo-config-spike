@@ -217,7 +217,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       const expectedName = t.storedName?.(step) ?? step.name ?? '';
       const existing = await findByName(t.resource, expectedName, t.nameKey);
       if (existing) {
-        refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey) };
+        refs[step.id] = { id: existing.id as number, name: nameOf(existing, t.nameKey), label: step.label };
         record({ outcome: 'already exists', id: existing.id });
         say(`= ${label}  already exists (id ${existing.id}), reused`);
         continue;
@@ -226,7 +226,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       const payload = t.build(step, refs, warn);
 
       if (!apply) {
-        refs[step.id] = { id: `<new ${step.id}>` as unknown as number, name: step.name ?? '' };
+        refs[step.id] = { id: `<new ${step.id}>` as unknown as number, name: step.name ?? '', label: step.label };
         const extras = t.relatedPreview?.(step, refs) ?? [];
         record({ outcome: 'would create', payload, ...(extras.length ? { detail: `with ${extras.join('; ')}` } : {}) });
         say(`· ${label}  would create${extras.length ? `, with ${extras.length} related record(s)` : ''}`);
@@ -238,7 +238,7 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         const toSend = Object.fromEntries(Object.entries(payload).filter(([k]) => k !== '_restore_tab_display' && !k.startsWith('_enact')));
         const created = firstRecord(await halo.post(`/${t.resource}`, [toSend]));
         if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
-        refs[step.id] = { id: created.id as number, name: expectedName };
+        refs[step.id] = { id: created.id as number, name: expectedName, label: step.label };
 
         // Rule F6: some objects only finish setting up on their first real save after creation.
         const follow = t.afterCreate?.(created.id as number, payload);

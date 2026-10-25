@@ -4,6 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 20 (25 Oct): the sample approval's stage renamed in words (P9), and how Halo's OWN ticket templates raise child
+ * tickets in order or after an approval: every child with creation rules, read in full (read-only).
  * Round 19 (25 Oct): approvals that depend on an answer (P7) at work. The builder makes a sample Yes/No dropdown, a
  * sample IT Security approval group (the API's own agent) and a sample approval process whose only stage is the rule
  * "admin rights = Yes: IT Security approves", and puts both on the sample ticket type. Enact then logs one ticket
@@ -44,7 +46,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 19, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 20, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -294,6 +296,16 @@ if (apply) {
       };
     });
 
+    // Round 20 (P9): the same rule as an added stage. The builder recognises the old-named stage and renames it in place.
+    await prove('approval stage named in words', {
+      request: 'Enact learning run 20',
+      steps: [
+        { id: 'dd', object: 'field', action: 'reuse', match: { name: ddName } },
+        { id: 'grp', object: 'approval_group', action: 'reuse', match: { name: `${SAMPLE} IT Security` } },
+        { id: 'ap', object: 'approval_process', action: 'update', match: { name: `${SAMPLE} conditional approval` }, set: { add_stages: [{ rules: [{ field: 'dd', equals: 'Yes', group: 'grp' }] }] } },
+      ],
+    } as Plan, async (log) => ({ stages: (((await detail('ApprovalProcess', idOf(log, 'ap')))?.steps as Row[]) ?? []).map((r) => pick(r, /^(id|name|sequence|type)$/)) }));
+
     // Halo names what's mandatory only in its refusal, so fill those by label and retry (run 17).
     const valueFor = async (fieldId: unknown) => {
       const f = await detail('FieldInfo', fieldId);
@@ -346,7 +358,7 @@ if (apply) {
         approval_records: probe,
       };
     };
-    for (const answer of ['Yes', 'No']) {
+    for (const answer of process.argv.includes('--approval-tickets') ? ['Yes', 'No'] : []) {
       try {
         const tid = await logTicket(answer);
         await new Promise((r) => setTimeout(r, 8000));
@@ -359,6 +371,25 @@ if (apply) {
     }
   }
 }
+
+// Round 20: how Halo's own templates raise children in order or after approval. Every child with creation rules.
+const allTemplates = await list('Template');
+const ordered: Row[] = [];
+for (const t of allTemplates) {
+  const d = await detail('Template', t.id);
+  const kids = (d?.children as Row[]) ?? [];
+  if (!kids.length) continue;
+  for (const k of kids) {
+    const kd = await detail('Template', k.id);
+    const rules = (kd?.creation_rules as Row[]) ?? [];
+    if (rules.length || Number(kd?.child_template_type ?? 0) !== 0 || Number(kd?.automationtype ?? -1) !== -1)
+      ordered.push({ parent: `${t.id} ${nameOf(d ?? {})}`, child: `${k.id} ${nameOf(kd ?? {})}`, child_template_type: kd?.child_template_type, automationtype: kd?.automationtype, rule_count: kd?.rule_count, creation_rules: rules, other: pick(kd, /seq|order|after|approv|dependent|wait|create/i) });
+  }
+  if (ordered.length >= 12) break;
+}
+note('child tickets', 'children with creation rules (Halo\'s own templates)', ordered);
+note('child tickets', 'parent keys (first with children)', Object.keys((await detail('Template', allTemplates.find((t) => true)?.id)) ?? {}).filter((k) => /child|rule|seq|order|approv/i.test(k)));
+summary.push(`· child tickets: ${ordered.length} children with creation rules read`);
 
 // Round 17: where sent emails live. Mailboxes (is outgoing mail set up?) and candidate queue endpoints, read-only.
 const mailboxes = await list('Mailbox');
