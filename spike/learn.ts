@@ -4,6 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 23 (25 Oct): round 22 changed three things at once and then no ticket got children. Now: re-read 4049/4050
+ * (late children?), read date_dependencies, put sample 46 back to how it was and check children come back, then
+ * switch on ONE thing per ticket (child_template_type 1; task dependencies) and see which one holds children back.
  * Round 22 (25 Oct): children in order or after approval. Halo's own templates have none, but every child carries
  * enable_task_dependencies / updateparent_* keys and the parent a child_template_type. On the sample parent 46 only:
  * switch each on, one at a time, and read back what Halo adds; then log a ticket that needs approval and one that
@@ -52,7 +55,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 22, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 23, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -383,44 +386,34 @@ if (apply) {
       const flat = (r: Row | null) => Object.fromEntries(Object.entries(r ?? {}).filter(([k, v]) => k !== 'children' && k !== 'customfields' && (typeof v !== 'object' || v === null)));
       const diff = (a: Row, b: Row) => Object.fromEntries(Object.keys({ ...a, ...b }).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => [k, { was: a[k], now: b[k] }]));
       const kidsOf = async () => Promise.all((((await detail('Template', parentId))?.children as Row[]) ?? []).map(async (k) => ({ id: k.id, full: await detail('Template', k.id), row: k })));
-      for (const [label, target, body] of [
-        ['parent child_template_type 1', 'parent', { child_template_type: 1 }],
-        ['parent enable_task_dependencies', 'parent', { enable_task_dependencies: true }],
-        ['child 2 enable_task_dependencies', 'child2', { enable_task_dependencies: true }],
-      ] as [string, string, Row][]) {
+      const childrenOf = async (tid: unknown) => extractList(await haloGet('/Tickets', { parent_id: String(tid), count: '20' }).catch(() => ({}))).filter((k) => Number(k.parent_id) === Number(tid)).map((k) => pick(k, /^(id|summary|status_id|dateoccurred)$/));
+      // Late children on round 22's tickets?
+      for (const tid of [4049, 4050]) note(area22, `round 22 ticket ${tid} now`, { status_id: (await detail('Tickets', tid))?.status_id, children: await childrenOf(tid) });
+      const parentNow = await detail('Template', parentId);
+      const kidIds = (((parentNow?.children as Row[]) ?? []).map((k) => Number(k.id)));
+      note(area22, 'date_dependencies (parent, children)', { parent: parentNow?.date_dependencies, children: await Promise.all(kidIds.map(async (id) => ({ id, date_dependencies: (await detail('Template', id))?.date_dependencies, enable_task_dependencies: (await detail('Template', id))?.enable_task_dependencies }))) });
+      const setState = async (parent: Row, child2: Row) => {
+        await haloPost('/Template', [{ id: parentId, ...parent }]);
+        if (kidIds[1]) await haloPost('/Template', [{ id: kidIds[1], ...child2 }]);
+      };
+      const trial = async (label: string, parent: Row, child2: Row) => {
         try {
-          const kids = await kidsOf();
-          const id = target === 'parent' ? parentId : kids[1]?.id;
-          if (!id) continue;
-          const before = await detail('Template', id);
-          const kidRowsBefore = kids.map((k) => k.row);
-          await haloPost('/Template', [{ id, ...body }]);
-          const after = await detail('Template', id);
-          const kidRowsAfter = (await kidsOf()).map((k) => k.row);
-          note(area22, label, {
-            template: id,
-            changed: diff(flat(before), flat(after)),
-            new_keys: Object.keys(after ?? {}).filter((k) => !(k in (before ?? {}))),
-            child_rows_changed: kidRowsAfter.map((r, i) => diff(kidRowsBefore[i] ?? {}, r)).filter((d) => Object.keys(d).length),
-            child_row_keys: Object.keys(kidRowsAfter[0] ?? {}),
-          });
+          await setState(parent, child2);
+          const tid = await logTicket('No');
+          await new Promise((r) => setTimeout(r, 15000));
+          const t = await detail('Tickets', tid);
+          const kids = await childrenOf(tid);
+          note(area22, label, { settings: { parent, child2 }, ticket: tid, status_id: t?.status_id, children: kids });
+          summary.push(`· ${label}: ticket ${tid}, ${kids.length} children after 15s`);
         } catch (e) {
           note(area22, `${label} failed`, err(e));
         }
-      }
-      // At work: a ticket that waits for approval (Yes) and one that doesn't (No). When do their children appear?
-      for (const answer of ['Yes', 'No']) {
-        try {
-          const tid = await logTicket(answer);
-          await new Promise((r) => setTimeout(r, 12000));
-          const t = await detail('Tickets', tid);
-          const kids = extractList(await haloGet('/Tickets', { parent_id: String(tid), count: '20' }).catch(() => ({}))).filter((k) => Number(k.parent_id) === Number(tid));
-          note(area22, `ticket answering ${answer}`, { ticket: tid, status_id: t?.status_id, approval: pick(t, /approv/i), child_count: t?.child_count, children: kids.map((k) => pick(k, /^(id|summary|status_id|dateoccurred)$/)) });
-          summary.push(`· children check: ticket ${tid} (${answer}) status ${t?.status_id}, ${t?.child_count ?? kids.length} children after 12s`);
-        } catch (e) {
-          note(area22, `ticket answering ${answer} failed`, err(e));
-        }
-      }
+      };
+      await trial('A: back to how it was', { child_template_type: 0, enable_task_dependencies: false }, { enable_task_dependencies: false });
+      await trial('B: child_template_type 1 only', { child_template_type: 1, enable_task_dependencies: false }, { enable_task_dependencies: false });
+      await trial('C: task dependencies only (parent and child 2)', { child_template_type: 0, enable_task_dependencies: true }, { enable_task_dependencies: true });
+      await setState({ child_template_type: 0, enable_task_dependencies: false }, { enable_task_dependencies: false });
+      note(area22, 'sample 46 left as', pick(await detail('Template', parentId), /^(child_template_type|enable_task_dependencies)$/));
     }
   }
 }
