@@ -302,7 +302,8 @@ export const FEATURES: Feature[] = [
     key: 'acknowledgement',
     name: 'acknowledgement emails when a ticket is logged',
     sections: ['ackEmail'],
-    prompt: `- ticket_type set may have acknowledgement_email: ref of an email_template step: Halo emails the requester that template as soon as a ticket of that type is logged (EM4). For a NEW ticket type, add an update step after creating it. Halo only sends it if the agent account it sends as is verified (EM5): say so in assumptions. Emails when the status changes aren't supported yet.`,
+    prompt: `- ticket_type set may have acknowledgement_email: ref of an email_template step: Halo emails the requester that template as soon as a ticket of that type is logged (EM4). For a NEW ticket type, add an update step after creating it. Halo only sends it if the agent account it sends as is verified (EM5): say so in assumptions.
+- "Email the requester when it moves to <status>": Halo's status settings don't send an email when a ticket enters a status (EM3). Do it on the action that moves the ticket there: outcome with new_status and send_email (E1), or outcome set: { send_email } on an existing one. Say in assumptions that the email goes when an agent uses that button, not when the status is changed some other way.`,
   },
   {
     key: 'email_branding',
