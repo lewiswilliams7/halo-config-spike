@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 6 (25 Oct): reads notifications on events, the priority matrix and categories (one sample category). Rounds 3
- * and 5's builder proofs re-run as a regression check: they must change nothing.
+ * Round 7 (25 Oct): proves categories, a priority matrix rule, a rule that sets a category, an agent notification and
+ * the parent template team fix (C2) with the builder. Earlier proofs re-run as a regression check (nothing to change).
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -136,81 +136,45 @@ if (apply && team) {
 
 // Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
 const assigning: Row[] = [];
-// ---------- 3. notifications on events (round 6) ----------
-// Probe: /Notification exists with eventno, emailtemplate_id, agents. Read them all, in full, with their conditions.
-const notes = await list('Notification');
-note('notifications', 'count', notes.length);
-note('notifications', 'list rows (first 5)', notes.slice(0, 5));
-const noteFull: Row[] = [];
-for (const n of notes.slice(0, 40)) {
-  const d = await detail('Notification', n.id);
-  if (d) noteFull.push(d);
-}
-note('notifications', 'events in use (eventno: names)', noteFull.reduce((acc: Row, d) => {
-  const k = String(d.eventno);
-  acc[k] = [...((acc[k] as string[]) ?? []), nameOf(d)];
-  return acc;
-}, {}));
-// The richest few in full: ones with conditions, recipients and a template.
-note('notifications', 'full (up to 6, with conditions first)', [...noteFull].sort((a, b) => Number(b.condition_count ?? 0) - Number(a.condition_count ?? 0)).slice(0, 6));
-for (const path of ['/Event', '/NotificationEvent', '/Lookup?lookupid=17', '/EventType']) {
-  try {
-    const rows = extractList(await haloGet(path.split('?')[0], path.includes('?') ? Object.fromEntries(new URLSearchParams(path.split('?')[1])) : undefined));
-    if (rows.length) { note('notifications', `event names from ${path}`, rows.slice(0, 80)); break; }
-  } catch {
-    // not there
-  }
-}
-summary.push(`· notifications: ${notes.length}, ${new Set(noteFull.map((d) => d.eventno)).size} different events`);
+// ---------- 3. round 7: categories, priority matrix, rule category, agent notifications, parent team (C2) ----------
+if (apply && ticketType) {
+  const agents = await list('Agent');
+  const me = agents.find((a) => /lewis/i.test(nameOf(a))) ?? agents.find((a) => Number(a.id) > 1 && !/\(ai\)/i.test(nameOf(a)));
+  note('reference', 'agent for the notification', me && nameOf(me));
+  await prove('category, matrix rule, rule that sets a category, notification', {
+    request: 'Enact learning run 7',
+    steps: [
+      { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
+      ...(me ? [{ id: 'me', object: 'agent' as const, action: 'reuse' as const, match: { name: nameOf(me) } }] : []),
+      { id: 'cat', object: 'category', action: 'create', name: `${SAMPLE}>Software>Licensing` },
+      // Same answer as Halo's own "Priority 2 - High Impact, Medium Urgency", so tickets aren't affected.
+      { id: 'mx', object: 'ticket_rule', action: 'create', name: `${SAMPLE} matrix`, when: [{ impact: 'High' }, { urgency: 'Medium' }], then: { priority: 2 } },
+      { id: 'cr', object: 'ticket_rule', action: 'create', name: `${SAMPLE} category rule`, when: [{ ticket_type: 'tt' }], then: { category: 'cat' } },
+      ...(me ? [{ id: 'n', object: 'notification' as const, action: 'create' as const, name: `${SAMPLE} notification`, event: 'p1_logged', by: 'popup' as const, agents: ['me'] }] : []),
+    ],
+  }, async (log) => ({
+    category: await detail('Category', idOf(log, 'cat')),
+    matrix_rule: pick(await detail('TicketRules', idOf(log, 'mx')), /^(name|use|new_priority_id|criteria)$/),
+    category_rule: pick(await detail('TicketRules', idOf(log, 'cr')), /^(name|use|new_category|criteria)/),
+    notification: idOf(log, 'n') ? await detail('Notification', idOf(log, 'n')) : null,
+  }));
 
-// ---------- 4. priority matrix (impact x urgency) ----------
-const allRules = await list('TicketRules');
-const matrix: Row[] = [];
-for (const r of allRules) {
-  const d = await detail('TicketRules', r.id);
-  if (d && Number(d.use) !== 0) matrix.push({ id: d.id, name: d.name, use: d.use, precedence: d.precedence, new_priority_id: d.new_priority_id, criteria: ((d.criteria as Row[]) ?? []).map((c) => pick(c, /fieldname|value_int|value_string|type$/)) });
+  // C2: a new parent template keeps the ticket type's own team (not Leaver's). Needs a ticket type without a template.
+  const team = (await list('Team'))[0];
+  await prove('child tickets keep the ticket type team', {
+    request: 'Enact learning run 7',
+    steps: [
+      { id: 'src', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
+      { id: 'zt2', object: 'ticket_type', action: 'create', name: `${SAMPLE} request 2`, based_on: nameOf(ticketType) },
+      ...(team ? [{ id: 'team', object: 'team' as const, action: 'reuse' as const, match: { name: nameOf(team) } }] : []),
+      { id: 'kids', object: 'ticket_template', action: 'create', name: `${SAMPLE} children 2`, attach_to: 'zt2', children: [{ summary: `${SAMPLE} child A`, ticket_type: 'zt2' }] },
+    ],
+  }, async (log) => {
+    const t = await detail('Template', idOf(log, 'kids'));
+    const tt = await detail('TicketType', idOf(log, 'zt2'));
+    return { template_team: t?.team, ticket_type_team: tt?.default_team, children: ((t?.children as Row[]) ?? []).map((c) => c.name) };
+  });
 }
-note('priority matrix', 'rules with use 1 or 2', matrix);
-for (const n of ['impact', 'urgency']) {
-  const f = fieldRows.find((r) => String(r.name).toLowerCase() === n);
-  note('priority matrix', `field ${n}`, f ? await detail('FieldInfo', f.id) : `no FieldInfo named ${n}`);
-}
-for (const id of [27, 28]) note('priority matrix', `lookup ${id} (impact/urgency values?)`, await list('Lookup', { lookupid: String(id) }));
-summary.push(`· priority matrix: ${matrix.length} rules`);
-
-// ---------- 5. categories ----------
-const cats = await list('Category');
-note('categories', 'count', cats.length);
-note('categories', 'list rows (first 8)', cats.slice(0, 8));
-const catFull: Row[] = [];
-for (const c of cats.slice(0, 4)) {
-  const d = await detail('Category', c.id);
-  if (d) catFull.push(d);
-}
-note('categories', 'full (first 4)', catFull);
-// Which ticket types use which category list.
-const typeCats: Row = {};
-for (const t of types.slice(0, 80)) {
-  const d = await detail('TicketType', t.id);
-  const k = pick(d, /categ/i);
-  if (Object.values(k).some(set)) typeCats[nameOf(t)] = k;
-}
-note('categories', 'ticket type category settings', typeCats);
-if (apply && catFull[0]) {
-  const name = `${SAMPLE} category`;
-  const existing = cats.find((c) => String(c.value ?? c.name ?? '') === name || String(c.name ?? '') === name);
-  const body: Row = existing ? { id: existing.id, value: name } : { ...cleanForCreate(catFull[0]), value: name, ...(('name' in catFull[0]) ? { name } : {}) };
-  try {
-    const r = firstRecord(await haloPost('/Category', [body]));
-    const back = r?.id ? await detail('Category', r.id) : null;
-    note('categories', 'sample read-back', { sent: body, back });
-    summary.push(`✓ category sample: id ${back?.id}`);
-  } catch (e) {
-    note('categories', 'sample failed', { error: err(e), sent: body });
-    summary.push(`✗ category sample: ${err(e).slice(0, 150)}`);
-  }
-}
-summary.push(`· categories: ${cats.length}`);
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(file, JSON.stringify(out, null, 2));

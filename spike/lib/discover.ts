@@ -135,6 +135,14 @@ export function needsFor(steps: PlanStep[]): Need[] {
         // A ticket rule (use 0), not an impact/urgency priority rule (use 1/2). Its effects are wiped by the translator.
         add({ file: 'template-ticketrule.json', resource: 'TicketRules', why: 'ticket rule', accept: (d) => Array.isArray(d[SPIKE_MAP.ticketRule.criteria ?? 'criteria']), prefer: (d) => Number(d.use ?? 0) === 0 });
         break;
+      // K1: a category in the first category list.
+      case 'category':
+        add({ file: 'template-category.json', resource: 'Category', why: 'category', accept: (d) => Number(d.type_id ?? 1) === 1 });
+        break;
+      // N1: an agent notification; its own subscribers are dropped by the translator.
+      case 'notification':
+        add({ file: 'template-notification.json', resource: 'Notification', why: 'notification', accept: (d) => d.eventno !== undefined, prefer: (d) => Number(d.delivery_method) === 1 });
+        break;
       case 'ticket_template':
         // A parent template (type 1) that already has child tickets, so children copy Halo's own row shape (C1).
         add({
@@ -158,7 +166,7 @@ export function needsFor(steps: PlanStep[]): Need[] {
 const RESOURCE_OF: Record<PlanStep['object'], string> = {
   field: 'FieldInfo', ticket_type: 'TicketType', sla: 'SLA', approval_process: 'ApprovalProcess', status: 'Status',
   outcome: 'Outcome', workflow: 'Workflow', team: 'Team', approval_group: 'CAB', field_group: 'FieldGroup',
-  agent: 'Agent', email_template: 'EmailTemplate', ticket_rule: 'TicketRules', ticket_template: 'Template',
+  agent: 'Agent', email_template: 'EmailTemplate', ticket_rule: 'TicketRules', ticket_template: 'Template', category: 'Category', notification: 'Notification',
 };
 
 /** Make sure every template the plan needs exists for this instance. Returns lines describing what was picked. */

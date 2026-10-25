@@ -133,7 +133,7 @@ ${request}
 ${extra}`;
 
 // ---------- 3. validate ----------
-const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template']);
+const OBJECTS = new Set(['team', 'field', 'sla', 'approval_process', 'ticket_type', 'status', 'outcome', 'workflow', 'agent', 'approval_group', 'field_group', 'email_template', 'ticket_rule', 'ticket_template', 'category', 'notification']);
 function validate(plan: Plan): string[] {
   const errors: string[] = [];
   if (!Array.isArray(plan.steps)) return ['"steps" must be an array'];

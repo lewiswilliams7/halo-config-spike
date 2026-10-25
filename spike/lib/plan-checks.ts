@@ -176,15 +176,39 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   // condition a rule runs on EVERY ticket type, so that must be on purpose.
   for (const s of steps) {
     if (s.object !== 'ticket_rule') continue;
+    if (s.action === 'update') {
+      if (s.set?.priority === undefined) errors.push(`step "${s.id}": updating a ticket rule can only change its priority (set.priority)`);
+      else if (!(Number.isInteger(Number(s.set.priority)) && Number(s.set.priority) >= 1)) errors.push(`step "${s.id}": set.priority must be a priority LEVEL number (got "${s.set.priority}")`);
+      continue;
+    }
+    if (s.action !== 'create') continue;
     if (!s.when?.length) errors.push(`step "${s.id}": a ticket rule needs conditions in "when", or it matches every ticket`);
     for (const c of s.when ?? []) {
       if ('ticket_type' in c) {
         if (steps.find((x) => x.id === c.ticket_type)?.object !== 'ticket_type') errors.push(`step "${s.id}": when.ticket_type must be a ticket_type step (got "${c.ticket_type}")`);
+      } else if ('impact' in c || 'urgency' in c) {
+        const v = String('impact' in c ? c.impact : c.urgency);
+        if (!/^(high|medium|low)$/i.test(v)) errors.push(`step "${s.id}": impact/urgency must be High, Medium or Low (got "${v}")`);
       } else dropdownAnswer(s.id, c.field, c.equals, 'a ticket rule condition');
     }
-    if (!s.then?.team && !s.then?.agent && s.then?.priority === undefined) errors.push(`step "${s.id}": the ticket rule doesn't set anything (then.team, then.agent, then.priority)`);
+    if (s.then?.category && steps.find((x) => x.id === s.then?.category)?.object !== 'category') errors.push(`step "${s.id}": then.category must be a category step`);
+    if (s.action === 'create' && !s.then?.team && !s.then?.agent && s.then?.priority === undefined && !s.then?.category) errors.push(`step "${s.id}": the ticket rule doesn't set anything (then.team, then.agent, then.priority)`);
     if (s.then?.priority !== undefined && !(Number.isInteger(Number(s.then.priority)) && Number(s.then.priority) >= 1))
       errors.push(`step "${s.id}": then.priority must be a priority LEVEL number from inventory.details.priority_levels (got "${s.then.priority}")`);
+  }
+
+  // N1: a notification needs a known event and agents to tell.
+  for (const s of steps) {
+    if (s.object !== 'notification' || s.action !== 'create') continue;
+    if (!s.event) errors.push(`step "${s.id}": a notification needs an event`);
+    if (!s.agents?.length) errors.push(`step "${s.id}": a notification needs agents to notify`);
+    for (const a of s.agents ?? []) if (steps.find((x) => x.id === a)?.object !== 'agent') errors.push(`step "${s.id}": "${a}" isn't an agent step`);
+  }
+  // K1: a category is a path of up to four levels.
+  for (const s of steps) {
+    if (s.object !== 'category' || s.action !== 'create') continue;
+    const levels = String(s.name ?? '').split('>').map((x) => x.trim()).filter(Boolean);
+    if (!levels.length || levels.length > 4) errors.push(`step "${s.id}": a category name is a path like "Hardware>Laptop>Repair" (1 to 4 levels)`);
   }
 
   // C1: child tickets hang off one ticket type and are each raised as a ticket of some type.

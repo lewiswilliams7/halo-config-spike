@@ -129,6 +129,37 @@ export const SPIKE_MAP = {
     conditions: 'group_visibility_conditions' as string | null,
     groupType: 2 as number | null,
   },
+  /** Priority matrix (rule TR3). Evidence: learning run 6, Halo's rules 14-26: impact-only rules have use 1, impact x
+   *  urgency rules use 2; criteria rows fieldname impact / urgency, value_int 1 High, 2 Medium, 3 Low (lookup 27 for
+   *  impact; urgency from the rule names, e.g. "Priority 4 - Low Impact, Medium Urgency" = impact 3, urgency 2). */
+  priorityMatrix: {
+    levels: { High: 1, Medium: 2, Low: 3 } as Record<string, number> | null,
+    impactOnlyUse: 1 as number | null,
+    impactUrgencyUse: 2 as number | null,
+  },
+  /** A rule that sets the category: new_category_1_id / new_category_1_name are on every rule (-1 / ""), but no rule
+   *  read sets one. Proven only once learn round 7 builds one. */
+  ruleCategory: {
+    setId: 'new_category_1_id' as string | null,
+    setName: 'new_category_1_name' as string | null,
+    provenOnTrial: null as boolean | null,
+  },
+  /** Categories (rule K1). Evidence: learning run 6: 105 Category rows, value = the path "Level 1>Level 2>Level 3"
+   *  (Halo fills category_name and level1-3 from it), type_id = which category list (1 = category 1). Sample 261 kept
+   *  value. A multi-level path is proven by learn round 7. */
+  category: {
+    nameKey: 'value' as string | null,
+    separator: '>' as string | null,
+    provenOnTrial: null as boolean | null,
+  },
+  /** Agent notifications (rule N1). Evidence: learning run 6, Notification 2-6: eventno, delivery_method (0 pop-up,
+   *  1 email), emailtemplate_id (agent template "Technician Update"), agents[] { agent_id, role_id }. Events seen by
+   *  name: 2 new ticket logged to a team, 6 P1 ticket logged, 17 ticket updated by the user, 33 ticket re-assigned,
+   *  1008 mention. Whether agents can be subscribed without a role: learn round 7. */
+  notification: {
+    events: { new_ticket_for_team: 2, p1_logged: 6, updated_by_user: 17, reassigned: 33, mentioned: 1008 } as Record<string, number> | null,
+    provenOnTrial: null as boolean | null,
+  },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
   runbook: {
     resource: null as string | null,
@@ -161,6 +192,30 @@ export const FEATURES: Feature[] = [
     name: 'ticket rules that route tickets to a team or agent',
     sections: ['ticketRule'],
     prompt: `- ticket_rule (runs when a ticket is logged): name, when: [{ ticket_type: ref } and/or { field: ref of a DROPDOWN field, equals: one of its options }] (all must match; include the ticket type unless the rule is meant for every type), then: { team?: ref, agent?: ref }. Check inventory.ticket_rules for one that already does it.`,
+  },
+  {
+    key: 'priority_matrix',
+    name: 'the priority matrix (impact and urgency)',
+    sections: ['priorityMatrix'],
+    prompt: `- ticket_rule when may also hold { impact: "High"|"Medium"|"Low" } and { urgency: "High"|"Medium"|"Low" }: with ONLY those and then.priority it is a priority matrix rule (TR3). Check inventory.ticket_rules first: the matrix usually exists ("Priority 2 - High Impact, Medium Urgency"); to change one, update it: ticket_rule set: { priority: level } (match by its exact name).`,
+  },
+  {
+    key: 'rule_category',
+    name: 'ticket rules that set a category',
+    sections: ['ruleCategory'],
+    prompt: `- ticket_rule then may also have category: ref of a category step (reuse or create).`,
+  },
+  {
+    key: 'categories',
+    name: 'categories',
+    sections: ['category'],
+    prompt: `- category: name = the full path with ">" between levels, e.g. "Hardware>Laptop>Repair" (K1). Check inventory.categories first; reuse by exact path.`,
+  },
+  {
+    key: 'notifications',
+    name: 'agent notifications on events',
+    sections: ['notification'],
+    prompt: `- notification (alerts AGENTS, not requesters): name, event: "new_ticket_for_team" | "p1_logged" | "updated_by_user" | "reassigned" | "mentioned", by: "popup" | "email", agents: [agent refs] (N1). Other events aren't supported yet.`,
   },
   {
     key: 'rule_priority',
@@ -203,7 +258,11 @@ export function featuresOf(step: PlanStep): Feature[] {
   const keys = new Set<string>();
   if (step.object === 'email_template' || step.send_email || step.set?.send_email) keys.add('emails');
   if (step.object === 'ticket_rule') keys.add('ticket_rules');
-  if (step.then?.priority) keys.add('rule_priority');
+  if (step.then?.priority !== undefined || step.set?.priority !== undefined) keys.add('rule_priority');
+  if ((step.when ?? []).some((c) => 'impact' in c || 'urgency' in c)) keys.add('priority_matrix');
+  if (step.then?.category) keys.add('rule_category');
+  if (step.object === 'category') keys.add('categories');
+  if (step.object === 'notification') keys.add('notifications');
   if (step.object === 'ticket_template') keys.add('child_tickets');
   if (step.set?.show_field_when?.length) keys.add('visibility');
   return FEATURES.filter((f) => keys.has(f.key));
@@ -474,7 +533,7 @@ export type Refs = Record<string, Ref>;
 
 export interface PlanStep {
   id: string;
-  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template';
+  object: 'team' | 'field' | 'sla' | 'approval_process' | 'ticket_type' | 'status' | 'outcome' | 'workflow' | 'agent' | 'approval_group' | 'field_group' | 'email_template' | 'ticket_rule' | 'ticket_template' | 'category' | 'notification';
   action: 'create' | 'reuse' | 'update';
   name?: string;
   label?: string;
@@ -544,6 +603,8 @@ export interface PlanStep {
     send_email?: string;
     // ticket_type: show a section only for some answers
     show_field_when?: FieldCondition[];
+    // ticket_rule: change the priority an existing rule sets (e.g. a priority matrix cell)
+    priority?: number | string;
     // email_template
     subject?: string;
     body?: string;
@@ -559,13 +620,17 @@ export interface PlanStep {
   send_email?: string;
   /** ticket_rule: conditions (all must match) and what it sets. */
   when?: RuleCondition[];
-  then?: { team?: string; priority?: number | string; agent?: string };
+  then?: { team?: string; priority?: number | string; agent?: string; category?: string };
+  /** notification: which event, how, and who. */
+  event?: string;
+  by?: 'popup' | 'email';
+  agents?: string[];
   /** ticket_template: the ticket type that raises these children, and the children. */
   attach_to?: string;
   children?: { summary: string; ticket_type: string; team?: string }[];
 }
 
-export type RuleCondition = { ticket_type: string } | { field: string; equals: string };
+export type RuleCondition = { ticket_type: string } | { field: string; equals: string } | { impact: string } | { urgency: string };
 
 /** Show `field` (ref, placed directly on the form) only when the dropdown `when` (ref) is `equals` (rule V1). */
 export interface FieldCondition {
@@ -1310,6 +1375,14 @@ export const translators: Record<PlanStep['object'], Translator> = {
         if ('ticket_type' in c) {
           if (!m.ticketTypeCriterion) { gap('a ticket rule condition on the ticket type', warn); continue; }
           criteria.push({ tablename: 'faults', fieldname: m.ticketTypeCriterion, value_type: 'int', value_int: refs[c.ticket_type]?.id, value_string: '', partialmatch: false, matchseparatedvalues: false, type: 0 });
+        } else if ('impact' in c || 'urgency' in c) {
+          // TR3: impact / urgency are Halo's own fields with levels 1-3.
+          const pm = SPIKE_MAP.priorityMatrix;
+          const which = 'impact' in c ? 'impact' : 'urgency';
+          const word = String((c as Record<string, string>)[which]);
+          const level = pm.levels?.[word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()];
+          if (!level) { warn(`ticket rule: ${which} "${word}" isn't High, Medium or Low`); continue; }
+          criteria.push({ tablename: 'faults', fieldname: which, value_type: 'int', value_int: level, value_string: '', partialmatch: false, matchseparatedvalues: false, type: 0 });
         } else {
           if (!m.fieldCriteriaConfirmed) { gap('a ticket rule condition on a field', warn); continue; }
           const option = optionOf(c.field, c.equals, refs, warn);
@@ -1317,6 +1390,13 @@ export const translators: Record<PlanStep['object'], Translator> = {
         }
       }
       if (!criteria.length) warn('ticket rule: no conditions, so it would match every ticket');
+      // TR3: a rule on impact / urgency alone is a priority matrix rule (use 1 impact only, use 2 with urgency).
+      const conds = step.when ?? [];
+      if (conds.length && conds.every((c) => 'impact' in c || 'urgency' in c)) {
+        const pm = SPIKE_MAP.priorityMatrix;
+        p.use = conds.some((c) => 'urgency' in c) ? pm.impactUrgencyUse : pm.impactOnlyUse;
+        if (!conds.some((c) => 'impact' in c)) warn('priority matrix rule: needs an impact (Halo\'s matrix rules always have one)');
+      }
       set(p, m.criteria, criteria, 'ticket rule conditions', warn);
       const t = step.then ?? {};
       if (t.team) {
@@ -1324,6 +1404,11 @@ export const translators: Record<PlanStep['object'], Translator> = {
         set(p, m.setTeamName, refs[t.team]?.name, 'the team a rule sets (name)', warn);
       }
       if (t.agent) set(p, m.setAgent, refs[t.agent]?.id, 'the agent a rule sets', warn);
+      if (t.category) {
+        const cm = SPIKE_MAP.ruleCategory;
+        set(p, cm.setId, refs[t.category]?.id, 'the category a rule sets', warn);
+        set(p, cm.setName, refs[t.category]?.name, 'the category a rule sets (name)', warn);
+      }
       if (t.priority !== undefined) {
         const pm = SPIKE_MAP.rulePriority;
         const level = Number(t.priority);
@@ -1331,7 +1416,58 @@ export const translators: Record<PlanStep['object'], Translator> = {
         else if (!Number.isInteger(level) || level < 1) warn(`ticket rule: priority "${t.priority}" isn't a priority level number`);
         else p[pm.setPriority] = level;
       }
-      if (!t.team && !t.agent && !t.priority) warn('ticket rule: sets nothing');
+      if (!t.team && !t.agent && t.priority === undefined && !t.category) warn('ticket rule: sets nothing');
+      return p;
+    },
+    // TR3: change what an existing rule sets (a matrix cell's priority). Only the changed key is sent (U2).
+    update: (step, _refs, warn) => {
+      const out: Row = {};
+      const level = Number(step.set?.priority);
+      if (step.set?.priority !== undefined) {
+        if (!Number.isInteger(level) || level < 1) warn(`ticket rule: priority "${step.set.priority}" isn't a priority level number`);
+        else if (SPIKE_MAP.rulePriority.setPriority) out[SPIKE_MAP.rulePriority.setPriority] = level;
+      }
+      if (!Object.keys(out).length) warn('update: nothing to set');
+      return out;
+    },
+  },
+
+  category: {
+    // Rule K1 (SPIKE_MAP.category). value is the path; Halo fills the levels. Re-runs find it by path.
+    resource: 'Category',
+    template: 'template-category.json',
+    nameKey: 'value',
+    // The path as Halo stores it: levels trimmed, joined by ">" (so "A > B" finds "A>B" on a re-run).
+    storedName: (step) => String(step.name ?? '').split(SPIKE_MAP.category.separator ?? '>').map((x) => x.trim()).filter(Boolean).join(SPIKE_MAP.category.separator ?? '>'),
+    build: (step, _refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-category.json'), 'Category');
+      const m = SPIKE_MAP.category;
+      const path = String(step.name ?? '').split(m.separator ?? '>').map((x) => x.trim()).filter(Boolean).join(m.separator ?? '>');
+      if (!path) warn('category: no path');
+      set(p, m.nameKey, path, 'category path', warn);
+      // Halo derives these from value (sample 261): never send the source's.
+      for (const k of ['category_name', 'level1', 'level2', 'level3', 'level4']) delete p[k];
+      Object.assign(p, { sla_id: -1, priority_id: -1, translations: [] });
+      return p;
+    },
+  },
+
+  notification: {
+    // Rule N1 (SPIKE_MAP.notification). Shape from one of the instance's own notifications; its subscribers dropped.
+    resource: 'Notification',
+    template: 'template-notification.json',
+    verifyCreate: (back) => (((back.agents as Row[]) ?? []).length ? [] : ['notification saved with nobody subscribed']),
+    build: (step, refs, warn) => {
+      const p = fromTemplate(templateFileFor(step, 'template-notification.json'), 'Notification');
+      const m = SPIKE_MAP.notification;
+      p.name = step.name;
+      const event = m.events?.[step.event ?? ''];
+      if (!event) warn(`notification: event "${step.event}" isn't one Enact knows (${Object.keys(m.events ?? {}).join(', ')})`);
+      else p.eventno = event;
+      p.delivery_method = step.by === 'email' ? 1 : 0;
+      p.agents = (step.agents ?? []).map((a) => ({ agent_id: refs[a]?.id }));
+      if (!(step.agents ?? []).length) warn('notification: nobody to notify');
+      Object.assign(p, { agent_id: 0, user_id: 0, email_list: '', condition_count: 0, rule_id: -1 });
       return p;
     },
   },
@@ -1355,6 +1491,9 @@ export const translators: Record<PlanStep['object'], Translator> = {
       // values and to-do list are its own.
       Object.assign(p, { summary: '', details: '', details_html: '', customfields: [], todo_list: [] });
       const attach = refs[step.attach_to ?? ''];
+      // C2 (2026-10-25): the parent's team came from the source template (Leaver: "Human Resources"), and a template
+      // applied when logging sets the ticket's team. The parent keeps the ticket type's own team.
+      p.team = String(attach?.row?.default_team ?? '');
       if (!attach) warn('ticket_template: attach_to is missing');
       p.tickettype_id = attach?.id;
       if (!m.children || m.childType === null) gap('child tickets', warn);
@@ -1432,9 +1571,11 @@ export function refsOf(step: PlanStep): string[] {
     step.send_email,
     step.set?.send_email,
     ...(step.set?.show_field_when ?? []).flatMap((c) => [c.field, c.when]),
-    ...(step.when ?? []).map((c) => ('ticket_type' in c ? c.ticket_type : c.field)),
+    ...(step.when ?? []).map((c) => ('ticket_type' in c ? c.ticket_type : 'field' in c ? c.field : undefined)),
     step.then?.team,
     step.then?.agent,
+    step.then?.category,
+    ...(step.agents ?? []),
     step.attach_to,
     ...(step.children ?? []).flatMap((c) => [c.ticket_type, c.team]),
   ].filter((r): r is string => Boolean(r));

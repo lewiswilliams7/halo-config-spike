@@ -35,7 +35,8 @@ async function pool<T, R>(items: T[], fn: (t: T) => Promise<R>, size = 6): Promi
   return out;
 }
 
-const nameOf = (r: Row) => String(r.name ?? r.buttonname ?? r.outcome ?? '');
+// Categories carry their path in value (K1).
+const nameOf = (r: Row) => String(r.name ?? r.buttonname ?? r.outcome ?? r.value ?? '');
 const mandatoryMark = (r: Row) => (Number(r.endusernew) === 3 || Number(r.technew) === 3 ? '*' : '');
 
 export async function readInventory(opts: { detail?: boolean; progress?: (msg: string) => void } = {}) {
@@ -96,6 +97,7 @@ export async function readInventory(opts: { detail?: boolean; progress?: (msg: s
     // Names only, so plans can reuse them (areas behind rule B2). Missing or forbidden endpoints read as empty.
     email_templates: await list('EmailTemplate').then((r) => r.map(nameOf), () => [] as string[]),
     ticket_rules: await list('TicketRules').then((r) => r.map(nameOf), () => [] as string[]),
+    agent_notifications: await list('Notification').then((r) => r.map(nameOf), () => [] as string[]),
   };
   if (!detail) return { ...inventory, details: undefined };
 
