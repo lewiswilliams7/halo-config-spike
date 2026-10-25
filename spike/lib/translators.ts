@@ -167,9 +167,12 @@ export const SPIKE_MAP = {
      *  Conditions: learning run 9, the runbook triggers are notification records with conditions[] { fieldname
      *  "RequestType", fieldid 1, type 0, value_int = ticket type id, value_display, value_type "int", tablename "faults" }
      *  and custom fields as { fieldname CF..., fieldid, type 0, value_int = option id, value_type "int" }.
-     *  Team: every notification read has team_name "" (none targets a team); team_name is tried in learn round 10. */
+     *  Rule N4 (learning runs 10-11): on CREATE Halo drops conditions and team_name; on an UPDATE of the saved
+     *  notification it keeps conditions (rows as above) and team_id (read back as team_name "Software Licensing"). */
     conditions: 'conditions' as string | null,
-    teamRecipient: null as string | null,
+    teamRecipient: 'team_id' as string | null,
+    /** Whether team_id means "tell the team's agents" in practice: Lewis's check on a real ticket (pending). */
+    teamMeaningChecked: null as boolean | null,
     provenOnTrial: true as boolean | null,
   },
   /** Runbooks. Evidence: probe found CustomIntegration and Webhook endpoints; contents not captured. */
@@ -1468,10 +1471,12 @@ export const translators: Record<PlanStep['object'], Translator> = {
     // Rule N1 (SPIKE_MAP.notification). Shape from one of the instance's own notifications; its subscribers dropped.
     resource: 'Notification',
     template: 'template-notification.json',
+    // N4: conditions and the team only stick on a save AFTER creation.
+    afterCreate: (id, sent) => (sent._enact_after ? { id, ...(sent._enact_after as Row) } : null),
     // N2: only the agents asked for, and no one subscribed through a role.
     verifyCreate: (back) => {
       const out: string[] = [];
-      if (!((back.agents as Row[]) ?? []).length && !String(back.team_name ?? '')) out.push('notification saved with nobody subscribed');
+      if (!((back.agents as Row[]) ?? []).length && !String(back.team_name ?? '') && !Number(back.team_id ?? 0)) out.push('notification saved with nobody subscribed');
       if (!((back.conditions as Row[]) ?? []).length) out.push('notification saved without conditions (N3)');
       if (((back.roles as Row[]) ?? []).length || ((back.user_roles as Row[]) ?? []).length) out.push(`notification is also sent to whole roles (${((back.roles as Row[]) ?? []).map((r) => r.role_name).join(', ')})`);
       const extra = ((back.agents as Row[]) ?? []).filter((a) => String(a.role_name ?? '') !== '');
@@ -1487,7 +1492,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
       else p.eventno = event;
       p.delivery_method = step.by === 'email' ? 1 : 0;
       p.agents = (step.agents ?? []).map((a) => ({ agent_id: refs[a]?.id }));
-      if (step.team) set(p, m.teamRecipient, refs[step.team]?.name, 'which team a notification tells', warn);
+      const after: Row = {};
+      if (step.team) set(after, m.teamRecipient, refs[step.team]?.id, 'which team a notification tells', warn);
       if (!(step.agents ?? []).length && !step.team) warn('notification: nobody to notify');
       // N3: scoped by conditions, like Halo's own runbook triggers.
       const conds: Row[] = [];
@@ -1499,7 +1505,8 @@ export const translators: Record<PlanStep['object'], Translator> = {
         } else warn('notification: only ticket type and dropdown conditions are supported');
       }
       if (!conds.length) warn('notification: no conditions, so it fires for every matching ticket on the instance (N3)');
-      set(p, m.conditions, conds, 'notification conditions', warn);
+      set(after, m.conditions, conds, 'notification conditions', warn);
+      if (Object.keys(after).length) p._enact_after = after;
       // Rule N2 (2026-10-25): the source's ROLE subscriptions came along (roles[]), and Halo expanded them to everyone
       // in Facilities, HR, IT and Administrator: 8 agents instead of 1. Nobody is subscribed but the plan's agents.
       Object.assign(p, { agent_id: 0, user_id: 0, email_list: '', condition_count: 0, rule_id: -1, roles: [], user_roles: [], conditions: [] });

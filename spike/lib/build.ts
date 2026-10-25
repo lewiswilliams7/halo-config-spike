@@ -234,7 +234,8 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
       } else {
         if (warnings.length && !allowWarnings) throw new Error(`stopped before writing: ${warnings.join('; ')}`);
         attempted = [payload];
-        const { _restore_tab_display: _r, ...toSend } = payload; // builder-only notes never go to Halo
+        // Builder-only notes never go to Halo: _restore_tab_display (T7) and anything starting _enact (N4).
+        const toSend = Object.fromEntries(Object.entries(payload).filter(([k]) => k !== '_restore_tab_display' && !k.startsWith('_enact')));
         const created = firstRecord(await halo.post(`/${t.resource}`, [toSend]));
         if (!created?.id) throw new Error(`Halo returned no id for ${t.resource}`);
         refs[step.id] = { id: created.id as number, name: expectedName };

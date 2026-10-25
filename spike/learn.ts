@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 11 (25 Oct): which keys Halo keeps for a notification's conditions and team (round 10 kept neither). The
- * ticket check and earlier proofs re-run as regression checks.
+ * Round 12 (25 Oct): the builder makes a team notification scoped to a ticket type (conditions and team saved after
+ * creation, N4). The ticket check and earlier proofs re-run as regression checks.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -158,45 +158,26 @@ note('tickets', 'recent sample-related tickets (what the builds did)', seen);
 note('tickets', 'keys on a ticket (first)', recent[0] ? Object.keys(recent[0]) : []);
 summary.push(`· tickets: ${seen.length} recent sample-related tickets read`);
 
-// ---------- round 11: which keys Halo keeps for a notification's conditions and team (N3) ----------
-// Round 10: posting conditions[] and team_name on create kept NEITHER. Try each candidate on its own, on the
-// sample notification 3 (nobody subscribed, so it never fires), and read back what stuck.
+// ---------- round 12: the builder makes a scoped team notification (N3, N4) ----------
 if (apply && ticketType) {
-  const area = 'notification ladder';
-  const notes = await list('Notification');
-  const n3 = notes.find((n) => String(n.name) === `${SAMPLE} notification 3`);
   const teams = await list('Team');
   const slTeam = teams.find((t) => /software licen/i.test(nameOf(t))) ?? teams[0];
-  if (n3 && slTeam) {
-    const row = { fieldname: 'RequestType', fieldid: 1, change_context: 0, type: 0, value_int: Number(ticketType.id), value_string: '', value_display: nameOf(ticketType), value_type: 'int', tablename: 'faults' };
-    const tries: [string, Row, (b: Row | null) => boolean][] = [
-      ['conditions with rule_id', { conditions: [{ ...row, rule_id: n3.id }] }, (b) => ((b?.conditions as Row[]) ?? []).length > 0],
-      ['conditions with condition_count', { conditions: [row], condition_count: 1 }, (b) => ((b?.conditions as Row[]) ?? []).length > 0],
-      ['criteria', { criteria: [row] }, (b) => ((b?.conditions as Row[]) ?? []).length > 0 || ((b?.criteria as Row[]) ?? []).length > 0],
-      ['conditions as type 23 (string id)', { conditions: [{ ...row, type: 23, value_int: 0, value_string: String(ticketType.id), value_type: 'string', rule_id: n3.id }] }, (b) => ((b?.conditions as Row[]) ?? []).length > 0],
-      ['team_id', { team_id: slTeam.id }, (b) => String(b?.team_name ?? '') !== '' || Number(b?.team_id ?? 0) > 0],
-      ['team (name)', { team: nameOf(slTeam) }, (b) => String(b?.team_name ?? '') !== ''],
-      ['teams[]', { teams: [{ team_id: slTeam.id, team_name: nameOf(slTeam) }] }, (b) => ((b?.teams as Row[]) ?? []).length > 0 || String(b?.team_name ?? '') !== ''],
-      ['type 1 + team_name', { type: 1, team_name: nameOf(slTeam) }, (b) => String(b?.team_name ?? '') !== ''],
-      ['type 2 + team_name', { type: 2, team_name: nameOf(slTeam) }, (b) => String(b?.team_name ?? '') !== ''],
-      ['type 0 + team_name', { type: 0, team_name: nameOf(slTeam) }, (b) => String(b?.team_name ?? '') !== ''],
-    ];
-    const results: Row = {};
-    for (const [label, body, kept] of tries) {
-      try {
-        await haloPost('/Notification', [{ id: n3.id, ...body }]);
-        const back = await detail('Notification', n3.id);
-        results[label] = { kept: kept(back), type: back?.type, team_name: back?.team_name, conditions: back?.conditions, keys: Object.keys(back ?? {}).filter((k) => /team|cond|crit|type/i.test(k)) };
-      } catch (e) {
-        results[label] = { error: err(e) };
-      }
-    }
-    note(area, 'results', results);
-    const won = Object.entries(results).filter(([, r]) => (r as Row).kept).map(([k]) => k);
-    summary.push(won.length ? `✓ notification keys Halo kept: ${won.join(', ')}` : '✗ notification: no candidate key kept (see file)');
-    // Put it back to nobody, no conditions, so it stays inert.
-    await haloPost('/Notification', [{ id: n3.id, type: -1, team_name: '', conditions: [], agents: [] }]).catch(() => undefined);
+  if (slTeam) {
+    await prove('notification for a team, on one ticket type', {
+      request: 'Enact learning run 12',
+      steps: [
+        { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
+        { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(slTeam) } },
+        { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 4`, event: 'new_ticket_for_team', by: 'popup', team: 'team', when: [{ ticket_type: 'tt' }] },
+      ],
+    }, async (log) => {
+      const n = await detail('Notification', idOf(log, 'n'));
+      return { team_name: n?.team_name, team_id: n?.team_id, type: n?.type, agents: ((n?.agents as Row[]) ?? []).map((a) => a.agent_name), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), conditions: n?.conditions, eventno: n?.eventno };
+    });
   }
+  // Who is in that team (for the real-ticket check).
+  const t = slTeam ? await detail('Team', slTeam.id) : null;
+  note('notifications', 'team members', ((t?.agents as Row[]) ?? []).map((a) => a.agent_name ?? a.name ?? a.agent_id));
 }
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
