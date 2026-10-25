@@ -4,6 +4,9 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 25 (25 Oct): actions raise child tickets (Halo's "Change Request" action: child_template_id 9). Read how Halo's
+ * own actions do it, give the sample action 107 the same settings pointing at a sample template, then use that
+ * action on a sample ticket through the API and see whether a child appears.
  * Round 24 (25 Oct): what raises children other than logging (CT1: at child_template_type 1 nothing does), and where
  * an order between children could live: every action and workflow step read for child / template settings, and
  * Halo's own API schema if the instance serves it. Read-only.
@@ -58,7 +61,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 24, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 25, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -380,6 +383,48 @@ if (apply) {
       } catch (e) {
         note('approval experiments', `ticket answering ${answer} failed`, err(e));
       }
+    }
+
+    // Round 25: an action that raises a child ticket, Halo's way (actions 37, 31 and 40 on this instance).
+    const area25 = 'child ticket from an action';
+    try {
+      const childKeys = /child|createchild/i;
+      const own: Row = {};
+      for (const id of [37, 31, 40]) own[id] = pick(await detail('Outcome', id), childKeys);
+      const t9 = await detail('Template', (own[37] as Row)?.child_template_id ?? 9);
+      note(area25, "Halo's own actions", own);
+      note(area25, 'the template action 37 raises', pick(t9, /^(id|name|type|tickettype_id|team|children|child_template_type)$/));
+      const sampleAction = (await list('Outcome')).find((o) => nameOf(o) === `${SAMPLE} notify installed`);
+      const zzTemplates = (await list('Template')).filter((t) => String(t.name ?? '').startsWith(SAMPLE));
+      let raise: Row | null = null;
+      for (const t of zzTemplates) {
+        const d = await detail('Template', t.id);
+        if (Number(d?.type) === Number(t9?.type) && Number(d?.tickettype_id) > 0) { raise = d; break; }
+      }
+      note(area25, 'sample template to raise', raise ? pick(raise, /^(id|name|type|tickettype_id)$/) : `none of type ${t9?.type}`);
+      if (sampleAction && raise) {
+        const src = own[37] as Row;
+        const body: Row = { id: sampleAction.id, child_template_id: raise.id, child_ticket_type_id: raise.tickettype_id };
+        if ('createchildticketortemplate' in src) body.createchildticketortemplate = src.createchildticketortemplate;
+        await haloPost('/Outcome', [body]);
+        note(area25, 'sample action now', pick(await detail('Outcome', sampleAction.id), childKeys));
+        // Use it on a fresh sample ticket, as an agent would.
+        const tid = await logTicket('No');
+        await new Promise((r) => setTimeout(r, 8000));
+        const before = Number((await detail('Tickets', tid))?.child_count ?? 0);
+        try {
+          await haloPost('/Actions', [{ ticket_id: tid, outcome_id: sampleAction.id, outcome: nameOf(sampleAction), note: 'Enact learn round 25: does this action raise a child?', sendemail: false }]);
+        } catch (e) {
+          note(area25, 'using the action failed', err(e));
+        }
+        await new Promise((r) => setTimeout(r, 10000));
+        const t = await detail('Tickets', tid);
+        const kids = extractList(await haloGet('/Tickets', { parent_id: String(tid), count: '20' }).catch(() => ({}))).filter((k) => Number(k.parent_id) === Number(tid)).map((k) => pick(k, /^(id|summary|tickettype_id|dateoccurred)$/));
+        note(area25, 'ticket after the action', { ticket: tid, children_before: before, child_count: t?.child_count, children: kids, actions: extractList(await haloGet('/Actions', { ticket_id: String(tid) }).catch(() => ({}))).map((x) => pick(x, /^(id|outcome|note)$/)) });
+        summary.push(`· action raises child: ticket ${tid}, children before ${before}, after ${kids.length}`);
+      }
+    } catch (e) {
+      note(area25, 'failed', err(e));
     }
 
     // Round 22: children after approval / in order, on sample parent template 46 only.
