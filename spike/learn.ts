@@ -4,8 +4,8 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 9 (25 Oct): reads recent tickets to check what the builds actually did (team, priority, category, child
- * tickets), and learns notification conditions and team recipients. Earlier proofs re-run as a regression check.
+ * Round 10 (25 Oct): a notification scoped to a ticket type and sent to a team (N3), and the ticket check again
+ * (what the builds did on real tickets). Earlier proofs re-run as a regression check.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -19,7 +19,7 @@ import { buildWithGate } from './lib/build.js';
 import { cleanForCreate } from './lib/clean.js';
 import { SPIKE_DIR, assertWritesAllowed, env, envHalo, extractList, fileTemplates, firstRecord, haloGet, haloPost } from './lib/halo.js';
 import { withRuntime } from './lib/runtime.js';
-import type { Plan } from './lib/translators.js';
+import { SPIKE_MAP, type Plan } from './lib/translators.js';
 
 type Row = Record<string, unknown>;
 const apply = process.argv.includes('--apply');
@@ -158,23 +158,25 @@ note('tickets', 'recent sample-related tickets (what the builds did)', seen);
 note('tickets', 'keys on a ticket (first)', recent[0] ? Object.keys(recent[0]) : []);
 summary.push(`· tickets: ${seen.length} recent sample-related tickets read`);
 
-// Notification conditions: runbook triggers are notification records with conditions (Webhook events, condition_count 1-2).
-const hooks = await list('Webhook');
-const withConditions: Row[] = [];
-for (const h of hooks) {
-  const d = await detail('Webhook', h.id);
-  for (const ev of ((d?.events as Row[]) ?? []).filter((e) => Number(e.condition_count) > 0)) {
-    const full = await detail('Notification', ev.id);
-    if (full) withConditions.push({ webhook: nameOf(h), id: ev.id, name: full.name, eventno: full.eventno, type: full.type, filter_type: full.filter_type, conditions: full.conditions, team_name: full.team_name, rule_id: full.rule_id });
-    if (withConditions.length >= 4) break;
-  }
-  if (withConditions.length >= 4) break;
+// ---------- round 10: a scoped notification to a team (N3) ----------
+// The builder's notification with a ticket type condition and a team. team_name is the experiment: SPIKE_MAP has it
+// null, so this run fills it in memory first (learning only), then reads back what Halo kept.
+if (apply && ticketType) {
+  const teams = await list('Team');
+  const slTeam = teams.find((t) => /software licen/i.test(nameOf(t))) ?? teams[0];
+  SPIKE_MAP.notification.teamRecipient = 'team_name';
+  await prove('notification scoped to a ticket type, to a team', {
+    request: 'Enact learning run 10',
+    steps: [
+      { id: 'tt', object: 'ticket_type', action: 'reuse', match: { name: nameOf(ticketType) } },
+      { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(slTeam) } },
+      { id: 'n', object: 'notification', action: 'create', name: `${SAMPLE} notification 3`, event: 'new_ticket_for_team', by: 'popup', team: 'team', when: [{ ticket_type: 'tt' }] },
+    ],
+  }, async (log) => {
+    const n = await detail('Notification', idOf(log, 'n'));
+    return { team_name: n?.team_name, type: n?.type, agents: ((n?.agents as Row[]) ?? []).map((a) => `${a.agent_name} (${a.role_name || 'direct'})`), roles: ((n?.roles as Row[]) ?? []).map((r) => r.role_name), conditions: n?.conditions, eventno: n?.eventno };
+  });
 }
-note('notifications', 'events with conditions (from runbook triggers)', withConditions);
-// All notifications in full again, for recipient types (type, team_name, user_id, roles).
-const allNotes = await list('Notification');
-note('notifications', 'recipient settings', (await Promise.all(allNotes.slice(0, 30).map((n) => detail('Notification', n.id)))).filter(Boolean).map((d) => pick(d, /^(id|name|type|eventno|delivery_method|team_name|team_id|agent_id|user_id|filter_type|rule_id|condition_count)$/)));
-summary.push(`· notifications: ${withConditions.length} with conditions found`);
 
 const file = resolve(SPIKE_DIR, '..', 'SEND-TO-CLAUDE.txt');
 writeFileSync(file, JSON.stringify(out, null, 2));

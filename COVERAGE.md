@@ -23,7 +23,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Approval processes: named agent, approval group, multi-stage | ✅ | P1–P4. Ad-hoc untested; roles not mapped; line manager needs managers set (P4) |
 | Approval groups (CABs) | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
 | Teams | 🧪 | Reuse ✅; create with members coded (M1), `plans/tier1-test.json` |
-| Categories, and ticket rules that set one | ✅ | K1. Category 262 (three levels) and rule 30 built and read back on gethandoveruk |
+| Categories, and ticket rules that set one | ✅ | K1. Category 262 and rule 30; tickets 4021-4023 got the category |
 | Priorities | ⬜ | Usually reused |
 | Field groups | 🧪 | Create + attach to ticket type coded (M1), `plans/tier1-test.json` |
 | Updating existing objects (any of the above) | ✅ | Partial updates proven safe (U0) |
@@ -33,7 +33,7 @@ Tiers are a first guess from implementation experience. Re-rank them with what p
 | Area | Status | Notes |
 |---|---|---|
 | Email templates, and emails sent from an action | ✅ | E1, O4. Built by the builder on gethandoveruk (template -103, action 107), read back exactly. Delivery to be seen in the UI. Emails on events (notifications): ⬜ |
-| Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28 built and read back (requesttypenew + dropdown criteria, team, priority 2, nothing else) |
+| Ticket rules: route to a team or agent, set a priority, on ticket type and answers | ✅ | TR1, TR2. Rule 28; ticket 4022 (6 or more) went to 1st Line Support at priority 2, ticket 4023 (1) didn't |
 | Child tickets raised when a ticket is logged | ✅ | C1. Builder made template 46 (children 47, 48) and linked ticket type 70 on gethandoveruk. Raising them on a real ticket to be seen in the UI. In order / on approval: ⬜ |
 | Canned text | ⬜ | |
 | Agent notifications on events | 🔒 | N1-N3. Builds and subscribes the right agents (notification 32), but off until conditions (ticket type) and team recipients are learned: unscoped, it fires for every ticket |

@@ -201,7 +201,10 @@ export function planChecks(plan: Plan, ctx: CheckContext = {}): string[] {
   for (const s of steps) {
     if (s.object !== 'notification' || s.action !== 'create') continue;
     if (!s.event) errors.push(`step "${s.id}": a notification needs an event`);
-    if (!s.agents?.length) errors.push(`step "${s.id}": a notification needs agents to notify`);
+    if (!s.agents?.length && !s.team) errors.push(`step "${s.id}": a notification needs a team (or agents) to tell`);
+    if (s.team && steps.find((x) => x.id === s.team)?.object !== 'team') errors.push(`step "${s.id}": "${s.team}" isn't a team step`);
+    if (!s.when?.length) errors.push(`step "${s.id}": scope the notification with when (at least the ticket type), or it fires for every ticket (N3)`);
+    for (const c of s.when ?? []) if ('field' in c) dropdownAnswer(s.id, c.field, c.equals, 'a notification condition');
     for (const a of s.agents ?? []) if (steps.find((x) => x.id === a)?.object !== 'agent') errors.push(`step "${s.id}": "${a}" isn't an agent step`);
   }
   // K1: a category is a path of up to four levels.
