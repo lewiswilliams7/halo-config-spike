@@ -1,0 +1,27 @@
+We're replacing our incident process in Halo and adding proper major incident management. This is our test environment, so start the name of everything new with "zz Enact test".
+
+INCIDENTS
+Anyone can log an incident. We need to know the affected service (Email, Microsoft Teams, VPN, Finance system, HR system, Website, Phones), how many people are affected (Just me, My team, My site, Whole company), how urgent it is (Low, Medium, High), and whether there's a workaround (Yes, No). If there's a workaround, ask them to describe it, and that description is then required. Affected service, people affected and urgency are required.
+
+Priority should come from impact and urgency: whole company and high is P1, my site and high or whole company and medium is P2, my team or my site at medium is P3, everything else P4.
+
+Stages: New, Triage, In Progress, Awaiting User, Resolved, Closed. The SLA clock must stop while we're waiting on the user. Targets: P1 respond in 15 minutes and fix in 4 hours, P2 30 minutes and 8 hours, P3 4 hours and 3 working days, P4 1 working day and 5 working days.
+
+Everything goes to 1st Line Support, except Finance system incidents, which go straight to the Finance Applications team.
+
+Emails: send the requester an acknowledgement when they log it, with their reference number and what they told us. When we resolve it, email them the resolution and tell them the ticket closes in 3 days unless they reply. Both emails in our brand: logo, colour #0F766E.
+
+MAJOR INCIDENTS
+Separate ticket type. Only agents log these. We need the affected service (same list), when it started, customer impact summary, whether customer data could be affected (Yes, No), the bridge call link, and the incident manager. Started, impact summary and incident manager are required.
+
+Stages: Declared, Investigating, Mitigated, Monitoring, Resolved, Post-incident review, Closed. Resolve within 4 hours, 24x7, no pausing.
+
+As soon as one is logged, tell everyone in the Major Incident team and the Service Delivery Managers group.
+
+If customer data could be affected, it can't move past Investigating until our Data Protection Officer (Priya Shah) approves. If not, no approval.
+
+Every major incident needs three child tickets raised: a comms update for the Service Desk, a technical investigation for the owning team, and a post-incident review for Problem Management. The post-incident review must only start after the major incident is resolved.
+
+Agents should be able to promote an incident to a major incident with one button, which raises the major incident and links it.
+
+Also update the status page every 30 minutes during a major incident and post updates to the #major-incidents Teams channel.

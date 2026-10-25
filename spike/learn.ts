@@ -4,6 +4,10 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
+ * Round 26 (25 Oct): round 25's action lost its template (read back -1) and Halo refused to use it on a ticket
+ * ("You do not have access to this Action at the moment"). Compare the sample action and template field by field with
+ * Halo's working pair (action 37, template 9), retry keeping the template with the extra fields Halo's own one carries,
+ * find which actions the ticket's current workflow stage allows, and use an allowed one to prove POST /Actions works.
  * Round 25 (25 Oct): actions raise child tickets (Halo's "Change Request" action: child_template_id 9). Read how Halo's
  * own actions do it, give the sample action 107 the same settings pointing at a sample template, then use that
  * action on a sample ticket through the API and see whether a child appears.
@@ -61,7 +65,7 @@ const apply = process.argv.includes('--apply');
 if (apply) assertWritesAllowed();
 
 const SAMPLE = 'zz Enact sample';
-const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 25, apply };
+const out: Record<string, unknown> = { instance: env.apiUrl, learned_at: new Date().toISOString(), round: 26, apply };
 const summary: string[] = [];
 const note = (area: string, key: string, value: unknown) => {
   const a = (out[area] ??= {}) as Row;
@@ -402,7 +406,7 @@ if (apply) {
         if (Number(d?.type) === Number(t9?.type) && Number(d?.tickettype_id) > 0) { raise = d; break; }
       }
       note(area25, 'sample template to raise', raise ? pick(raise, /^(id|name|type|tickettype_id)$/) : `none of type ${t9?.type}`);
-      if (sampleAction && raise) {
+      if (sampleAction && raise && process.argv.includes('--round25')) {
         const src = own[37] as Row;
         const body: Row = { id: sampleAction.id, child_template_id: raise.id, child_ticket_type_id: raise.tickettype_id };
         if ('createchildticketortemplate' in src) body.createchildticketortemplate = src.createchildticketortemplate;
@@ -425,6 +429,67 @@ if (apply) {
       }
     } catch (e) {
       note(area25, 'failed', err(e));
+    }
+
+    // Round 26: why the action lost its template, and why Halo wouldn't let us use it.
+    const area26 = 'action access and child template';
+    try {
+      const flat = (r: Row | null) => Object.fromEntries(Object.entries(r ?? {}).filter(([, v]) => typeof v !== 'object' || v === null));
+      const diff = (a: Row, b: Row) => Object.fromEntries(Object.keys({ ...a, ...b }).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => [k, { halo: a[k], sample: b[k] }]));
+      const sampleAction = (await list('Outcome')).find((o) => nameOf(o) === `${SAMPLE} notify installed`);
+      const a37 = await detail('Outcome', 37);
+      const a107 = sampleAction ? await detail('Outcome', sampleAction.id) : null;
+      note(area26, 'action 37 vs sample action (every plain field that differs)', diff(flat(a37), flat(a107)));
+      note(area26, 'action 37 lists and objects', Object.fromEntries(Object.entries(a37 ?? {}).filter(([, v]) => v && typeof v === 'object').map(([k, v]) => [k, JSON.stringify(v).slice(0, 400)])));
+      const zzChildren = (await list('Template')).find((t) => nameOf(t) === `${SAMPLE} children`);
+      const t9 = await detail('Template', 9);
+      const t42 = zzChildren ? await detail('Template', zzChildren.id) : null;
+      note(area26, 'template 9 vs sample children template (every plain field that differs)', diff(flat(t9), flat(t42)));
+
+      // Which ticket types and workflow stages allow which actions.
+      const tt70 = await detail('TicketType', zType.id);
+      const tt2 = await detail('TicketType', 2);
+      const accessKeys = /outcome|action|allow|workflow|flow/i;
+      note(area26, 'sample ticket type: action and workflow settings', pick(tt70, accessKeys));
+      note(area26, 'Change Request ticket type: action and workflow settings', pick(tt2, accessKeys));
+      const tid = await logTicket('No');
+      await new Promise((r) => setTimeout(r, 6000));
+      const tk = await detail('Tickets', tid);
+      note(area26, 'fresh sample ticket: workflow position', { ticket: tid, ...pick(tk, /workflow|flow|stage|step|status_id|approval/i) });
+      const wfId = Number(tk?.workflow_id ?? tt70?.workflow_id ?? 0);
+      const wf = wfId > 0 ? await detail('Workflow', wfId) : null;
+      const stepNow = Number(tk?.workflow_step ?? tk?.flowstage_id ?? tk?.workflow_stepid ?? 0);
+      const steps = ((wf?.steps as Row[]) ?? []).map((s) => ({ step_id: s.step_id, name: s.name, actions: ((s.actions as Row[]) ?? []).map((x) => ({ action_id: x.action_id ?? x.outcome_id, action_name: x.action_name, end_step: x.end_step })) }));
+      note(area26, 'sample workflow stages and their actions', { workflow: wfId, name: wf ? nameOf(wf) : null, current_step: stepNow, steps });
+      const here = steps.find((s) => Number(s.step_id) === stepNow) ?? steps[0];
+      const sampleOnStage = steps.some((s) => s.actions.some((x) => Number(x.action_id) === Number(sampleAction?.id) || x.action_name === nameOf(sampleAction ?? {})));
+      note(area26, 'is the sample action on any stage of this workflow?', sampleOnStage);
+
+      // Prove POST /Actions works at all, with an action the current stage allows.
+      const allowed = here?.actions.find((x) => Number(x.action_id) > 0);
+      if (allowed) {
+        try {
+          await haloPost('/Actions', [{ ticket_id: tid, outcome_id: allowed.action_id, note: 'Enact learn round 26: an action this stage allows', sendemail: false }]);
+          await new Promise((r) => setTimeout(r, 4000));
+          note(area26, 'using an allowed action', { action: allowed, ticket_now: pick(await detail('Tickets', tid), /status_id|workflow_step|flowstage/i) });
+        } catch (e) {
+          note(area26, 'using an allowed action failed', { action: allowed, error: err(e) });
+        }
+      } else note(area26, 'using an allowed action', 'the current stage lists no actions');
+
+      // Keep the template on the sample action: send what Halo's own action carries for its child, by name as well as id.
+      if (sampleAction && zzChildren && a37) {
+        const childBody: Row = { id: sampleAction.id };
+        for (const [k, v] of Object.entries(flat(a37))) if (/child|createchild/i.test(k)) childBody[k] = v;
+        Object.assign(childBody, { child_template_id: zzChildren.id, child_template_name: nameOf(zzChildren), child_ticket_type_id: zType.id, child_ticket_type_name: nameOf(zType) });
+        await haloPost('/Outcome', [childBody]);
+        const after = pick(await detail('Outcome', sampleAction.id), /child|createchild/i);
+        note(area26, 'sample action after sending every child field', { sent: childBody, now: after });
+        summary.push(`· action child template kept: ${Number(after.child_template_id) === Number(zzChildren.id) ? 'yes' : `no (${after.child_template_id})`}`);
+      }
+      summary.push(`· round 26: ticket ${tid} at step ${stepNow}; sample action on a stage: ${sampleOnStage}; allowed action used: ${allowed ? allowed.action_name : 'none'}`);
+    } catch (e) {
+      note(area26, 'failed', err(e));
     }
 
     // Round 22: children after approval / in order, on sample parent template 46 only.
