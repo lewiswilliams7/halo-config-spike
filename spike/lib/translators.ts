@@ -106,16 +106,18 @@ export const SPIKE_MAP = {
     priorityNumberKey: 'priorityid' as string | null,
   },
   /** Child tickets raised with a ticket. Evidence: probe found /Template. Nothing about children or the trigger yet. */
-  /** Child tickets (rule C1). Evidence: learning run 2, templates 1 "New Starter Request" and 30 "Leaver Request": a
-   *  parent template (type 1, tickettype_id = the parent's type) holds children[]: templates of type 6 (domain "reqs")
-   *  with name, summary, tickettype_id, team; a child with no creation_rules is raised straight away. The ticket type
+  /** Child tickets (rule C1). Evidence: learning runs 2-4, templates 1 "New Starter Request" and 30 "Leaver Request":
+   *  a parent template (type 1, tickettype_id = the parent's type) lists children[]: templates of type 6 in their own
+   *  right (name, summary, tickettype_id, team); a child with no creation_rules is raised straight away. The ticket type
    *  points at the parent through overridewiththefollowingtemplatewhenloggingmanually (New Starter 17 → 1, Leaver 16 →
-   *  30). Writing children inline with the parent is not proven yet: provenOnTrial stays null until learn round 3. */
+   *  30). Writing NEW children inline with the parent: bare 500 (run 3). Children made first as their own records,
+   *  then linked with children: [{ id }]: kept (run 4, parent 45, children 43 and 44). */
   childTickets: {
     children: 'children' as string | null,
     parentType: 1 as number | null,
     childType: 6 as number | null,
     attach: 'overridewiththefollowingtemplatewhenloggingmanually' as string | null,
+    /** Run 4 proved the parts by hand-shaped posts; the builder's own run of C1 is pending (learn round 5). */
     provenOnTrial: null as boolean | null,
   },
   /** Show a field only for some answers. Evidence: learn, five form rows on gethandoveruk (Absence Management, Employee
@@ -625,7 +627,9 @@ export interface Translator {
   /** Return null when there's nothing to do for this record. `sent` = the payload that was created. */
   afterCreate?: (id: number, sent: Record<string, unknown>) => Record<string, unknown> | null;
   /** Records that belong to the one just created and need its ids (e.g. approval rules, rule P7). Created straight after it. */
-  related?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<{ resource: string; payload: Record<string, unknown>; label: string }[]>;
+  related?: (created: Record<string, unknown>, step: PlanStep, refs: Refs) => Promise<{ resource: string; payload: Record<string, unknown> | ((made: Record<string, unknown>[]) => Record<string, unknown>); label: string }[]>;
+  /** For action 'create': problems in a fresh read-back once the related records exist (e.g. children linked, C1). */
+  verifyAfterRelated?: (back: Record<string, unknown>, step: PlanStep) => string[];
   /** What `related` will add, for the dry run. */
   relatedPreview?: (step: PlanStep, refs: Refs) => string[];
   /** Property holding the record's name, if not `name` (e.g. Outcome uses `outcome`). */
@@ -1333,49 +1337,60 @@ export const translators: Record<PlanStep['object'], Translator> = {
   },
 
   ticket_template: {
-    // Feature "child_tickets", rule C1 (SPIKE_MAP.childTickets). Shape from one of the instance's own parent templates.
+    // Feature "child_tickets", rule C1 (SPIKE_MAP.childTickets). The parent is created first WITHOUT children; each
+    // child is then made as its own type 6 template; then the parent lists them by id; then the ticket type points at
+    // the parent. Shapes come from one of the instance's own parent templates and its first child.
     resource: 'Template',
     template: 'template-template.json',
-    verifyCreate: (back) => (((back[SPIKE_MAP.childTickets.children ?? 'children'] as Row[]) ?? []).length ? [] : ['template saved without its child tickets']),
+    verifyAfterRelated: (back, step) => {
+      const have = ((back[SPIKE_MAP.childTickets.children ?? 'children'] as Row[]) ?? []).map((c) => String(c.name));
+      return (step.children ?? []).filter((c) => !have.includes(c.summary)).map((c) => `child ticket "${c.summary}" isn't on the template after saving`);
+    },
     build: (step, refs, warn) => {
-      const src = runtime().templates.get(templateFileFor(step, 'template-template.json')) ?? {};
       const p = fromTemplate(templateFileFor(step, 'template-template.json'), 'Template');
       const m = SPIKE_MAP.childTickets;
       p.name = step.name;
       if (m.parentType !== null) p.type = m.parentType;
-      // The source's own summary uses its own fields ($CFfirstName ...): ours is the ticket's own summary.
-      p.summary = '';
+      // The source's own content never comes along: its summary uses its own fields, its details, custom field
+      // values and to-do list are its own.
+      Object.assign(p, { summary: '', details: '', details_html: '', customfields: [], todo_list: [] });
       const attach = refs[step.attach_to ?? ''];
       if (!attach) warn('ticket_template: attach_to is missing');
       p.tickettype_id = attach?.id;
-      if (!m.children || m.childType === null) { gap('child tickets', warn); return p; }
-      // Children: shaped like the source's first child (cleaned), each a type 6 template raised straight away.
-      const shape = cleanForCreate(((src[m.children] as Row[]) ?? [])[0] ?? {});
-      p[m.children] = (step.children ?? []).map((c) => ({
-        ...shape,
-        name: c.summary,
-        summary: c.summary,
-        type: m.childType,
-        tickettype_id: refs[c.ticket_type]?.id,
-        team: c.team ? refs[c.team]?.name ?? '' : '',
-        creation_rules: [],
-        rule_count: 0,
-      }));
+      if (!m.children || m.childType === null) gap('child tickets', warn);
+      else delete p[m.children]; // children are made and linked after the parent (C1)
       if (!(step.children ?? []).length) warn('ticket_template: no child tickets');
       // C1: a ticket type that already raises a template would have it replaced: refuse, don't overwrite.
       const current = Number(attach?.row?.[m.attach ?? ''] ?? -1);
       if (current > 0) warn(`"${attach?.name}" already uses template ${current} when logged; Enact won't replace it`);
       return p;
     },
-    // C1: point the ticket type at the new template, so its tickets raise the children.
-    relatedPreview: (step, refs) => [`${refs[step.attach_to ?? '']?.name ?? step.attach_to} uses this template when logged`],
+    relatedPreview: (step, refs) => [
+      ...(step.children ?? []).map((c) => `child ticket "${c.summary}" (${refs[c.ticket_type]?.name ?? c.ticket_type}${c.team ? `, ${refs[c.team]?.name ?? c.team}` : ''})`),
+      'the template lists its child tickets',
+      `${refs[step.attach_to ?? '']?.name ?? step.attach_to} uses this template when logged`,
+    ],
     related: async (record, step, refs) => {
       const m = SPIKE_MAP.childTickets;
+      if (!m.children || m.childType === null || !m.attach) return [];
+      // Child shape: the first child of the template the parent was copied from (Halo's own), cleaned.
+      const src = runtime().templates.get(templateFileFor(step, 'template-template.json')) ?? {};
+      const first = ((src[m.children] as Row[]) ?? [])[0];
+      const childSrc = first?.id ? firstRecord(await runtime().halo.get(`/Template/${first.id}`, { includedetails: 'true' })) ?? {} : {};
+      const shape: Row = cleanForCreate(childSrc);
+      Object.assign(shape, { details: '', details_html: '', customfields: [], todo_list: [], creation_rules: [] });
+      const kids = step.children ?? [];
+      const out: { resource: string; payload: Row | ((made: Row[]) => Row); label: string }[] = kids.map((c) => ({
+        resource: 'Template',
+        label: `child ticket "${c.summary}"`,
+        payload: { ...shape, name: c.summary, summary: c.summary, type: m.childType, tickettype_id: refs[c.ticket_type]?.id, team: c.team ? refs[c.team]?.name ?? '' : '' },
+      }));
+      out.push({ resource: 'Template', label: 'template lists its child tickets', payload: (made) => ({ id: record.id, [m.children as string]: made.slice(0, kids.length).map((k) => ({ id: k.id })) }) });
       const tt = refs[step.attach_to ?? ''];
-      if (!m.attach || !tt?.id) return [];
-      const current = firstRecord(await runtime().halo.get(`/TicketType/${tt.id}`, { includedetails: 'true' })) ?? {};
-      if (Number(current[m.attach]) === Number(record.id)) return []; // re-run
-      return [{ resource: 'TicketType', label: `${tt.name} uses template "${record.name}"`, payload: { id: tt.id, [m.attach]: record.id } }];
+      const current = tt?.id ? firstRecord(await runtime().halo.get(`/TicketType/${tt.id}`, { includedetails: 'true' })) ?? {} : {};
+      if (tt?.id && Number(current[m.attach]) !== Number(record.id))
+        out.push({ resource: 'TicketType', label: `${tt.name} uses template "${record.name}"`, payload: { id: tt.id, [m.attach]: record.id } });
+      return out;
     },
   },
 };

@@ -173,7 +173,10 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         const current = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
         const changes = t.update(step, refs, warn, current);
         // Drop no-op changes (value already as wanted), so "nothing to change" is reported honestly.
-        for (const k of Object.keys(changes)) if (JSON.stringify(changes[k]) === JSON.stringify(current[k])) delete changes[k];
+        // Unchanged values aren't sent. Form rows come back with display copies (group, fieldinfo) that updates never
+        // send (U2): compare without them, or a re-run re-sends the whole form and Halo rewrites every row (run 3).
+        const plain = (v: unknown) => JSON.stringify(Array.isArray(v) ? v.map((r) => (r && typeof r === 'object' ? (({ group: _g, fieldinfo: _f, ...rest }) => rest)(r as Record<string, unknown>) : r)) : v);
+        for (const k of Object.keys(changes)) if (plain(changes[k]) === plain(current[k])) delete changes[k];
         refs[step.id] = { id: target.id as number, name: nameOf(target, t.nameKey), row: current };
         const describe = (c: Record<string, unknown>) =>
           Object.entries(c).map(([k, v]) => (Array.isArray(v) ? `${k}: ${v.length} rows (was ${Array.isArray(current[k]) ? (current[k] as unknown[]).length : 0})` : `${k}: ${JSON.stringify(current[k])} → ${JSON.stringify(v)}`)).join('; ');
@@ -198,8 +201,10 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         // Records hanging off an updated record (e.g. rules for an added approval stage, P7/P8). Idempotent.
         if (apply && t.related) {
           const now = firstRecord(await halo.get(`/${t.resource}/${target.id}`, { includedetails: 'true' })) ?? {};
+          const before: Record<string, unknown>[] = [];
           for (const r of await t.related(now, step, refs)) {
-            const made = firstRecord(await halo.post(`/${r.resource}`, [r.payload]));
+            const made = firstRecord(await halo.post(`/${r.resource}`, [typeof r.payload === 'function' ? r.payload(before) : r.payload]));
+            if (made) before.push(made);
             const rb = made?.id ? firstRecord(await halo.get(`/${r.resource}/${made.id}`, { includedetails: 'true' })) : null;
             if (!rb?.id) warn(`${r.label}: not there after saving`);
             else say(`      + ${r.label} (id ${rb.id}), verified`);
@@ -255,11 +260,20 @@ export async function runBuild(plan: Plan, opts: BuildOptions): Promise<BuildRes
         // Records that hang off this one (e.g. approval rules, P7): created now, each read back.
         const madeRelated: string[] = [];
         if (t.related) {
+          // A related payload may be a function of the records made before it (C1: link children made just above).
+          const made: Record<string, unknown>[] = [];
           for (const r of await t.related(back ?? created, step, refs)) {
-            const made = firstRecord(await halo.post(`/${r.resource}`, [r.payload]));
-            const rb = made?.id ? firstRecord(await halo.get(`/${r.resource}/${made.id}`, { includedetails: 'true' })) : null;
-            if (!rb?.id) warn(`${r.label}: not there after saving`);
-            else madeRelated.push(`${r.label} (id ${rb.id})`);
+            const body = typeof r.payload === 'function' ? r.payload(made) : r.payload;
+            const res = firstRecord(await halo.post(`/${r.resource}`, [body]));
+            const rb = res?.id ? firstRecord(await halo.get(`/${r.resource}/${res.id}`, { includedetails: 'true' })) : null;
+            if (!rb?.id) throw new Error(`${r.label}: not there after saving`);
+            made.push(rb);
+            madeRelated.push(`${r.label} (id ${rb.id})`);
+          }
+          // Checks that only make sense once the related records exist (C1: the parent lists its children).
+          if (t.verifyAfterRelated) {
+            const again = firstRecord(await halo.get(`/${t.resource}/${created.id}`, { includedetails: 'true' })) ?? {};
+            for (const x of t.verifyAfterRelated(again, step)) warn(x);
           }
         }
 

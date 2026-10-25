@@ -4,7 +4,7 @@
  *   npm run learn              read-only: reads what exists
  *   npm run learn -- --apply   also makes "zz Enact sample ..." records on the trial and runs the real builder
  *
- * Round 4 (25 Oct): finds how Halo saves child tickets (children as their own records, then linked).
+ * Round 5 (25 Oct): the builder makes child tickets end to end (rule C1). Re-runs of round 3's proofs must change nothing.
  * Round 3 (25 Oct): proves ticket rules (with priority), conditional fields, emails and child tickets with the REAL
  * builder on the trial (dry run gate B1, apply, read back). Also reads every action (sendemail settings, default
  * team/agent: rule O4), priorities, ticket templates and runbooks, as round 2 did.
@@ -113,70 +113,24 @@ if (apply && ticketType && team && dropdown && option) {
 
 }
 
-// ---------- 2. child tickets: which way of saving children Halo accepts (round 4) ----------
-// Round 3: a parent posted with NEW children inline got a bare 500. The read-back of Leaver (30) lists children as
-// separate type 6 Template records (31-35). So: make each child on its own, then link them to the parent, trying the
-// likely shapes in turn and recording which Halo keeps.
-if (apply) {
-  const area = 'child tickets ladder';
-  const tpls = await list('Template');
-  const byName = (n: string) => tpls.find((t) => String(t.name ?? '') === n);
-  const leaver = tpls.find((t) => /leaver/i.test(String(t.name))) ?? tpls.find((t) => Number(t.id) === 30);
-  const leaverFull = leaver ? await detail('Template', leaver.id) : null;
-  const childRef = ((leaverFull?.children as Row[]) ?? [])[0];
-  const childFull = childRef ? await detail('Template', childRef.id) : null;
-  note(area, 'Halo child template (full)', childFull);
-  note(area, 'Halo parent template keys', leaverFull && Object.keys(leaverFull));
-  const zt = types.find((t) => String(t.name) === `${SAMPLE} request`) ?? ticketType;
-  const tryPost = async (label: string, body: Row) => {
-    try {
-      const r = firstRecord(await haloPost('/Template', [body]));
-      const back = r?.id ? await detail('Template', r.id) : null;
-      note(area, label, { ok: true, id: back?.id, children: back?.children, keys_sent: Object.keys(body) });
-      return back;
-    } catch (e) {
-      note(area, label, { ok: false, error: err(e), sent: body });
-      return null;
-    }
-  };
-  // 1. The children, each its own record, shaped like Halo's own child (cleaned).
-  const kids: Row[] = [];
-  for (const n of [1, 2]) {
-    const name = `${SAMPLE} child ${n}`;
-    const have = byName(name);
-    const made = have ? await detail('Template', have.id) : await tryPost(`child ${n}: own record`, {
-      ...(childFull ? cleanForCreate(childFull) : { type: 6, domain: 'reqs' }), name, summary: name, tickettype_id: zt?.id, ...(n === 1 && team ? { team: nameOf(team) } : {}), creation_rules: [],
-    });
-    if (made) kids.push(made);
-  }
-  // 2. The parent without children.
-  const pname = `${SAMPLE} parent`;
-  const parent = byName(pname) ? await detail('Template', byName(pname)!.id) : await tryPost('parent without children', {
-    ...(leaverFull ? cleanForCreate(leaverFull) : { type: 1 }), name: pname, summary: '', tickettype_id: zt?.id,
-  });
-  // 3. Link: try the shapes in turn until the parent reads back with both children.
-  const linked = () => ((parent?.children as Row[]) ?? []).length >= kids.length && kids.length > 0;
-  if (parent && kids.length) {
-    const shapes: [string, Row][] = [
-      ['children as {id}', { id: parent.id, children: kids.map((k) => ({ id: k.id })) }],
-      ['children as Halo rows', { id: parent.id, children: kids.map((k) => ({ ...(childRef ?? {}), id: k.id, guid: k.guid, name: k.name, summary: k.summary, tickettype_id: k.tickettype_id, creation_rules: [], rule_count: 0 })) }],
-      ['children as full records', { id: parent.id, children: kids }],
-    ];
-    for (const [label, body] of shapes) {
-      if (linked()) break;
-      const back = await tryPost(`link: ${label}`, body);
-      if (back) Object.assign(parent, back);
-    }
-    // 4. Children pointing at the parent instead (a creation rule with no condition).
-    if (!linked()) {
-      for (const k of kids) await tryPost(`child ${k.name}: creation rule to parent`, { id: k.id, creation_rules: [{ parent_template_id: parent.id, child_template_id: k.id, usage: 0, rule_type: 0, createonchildclose_id: -1, working_days: 0, outcome_id: 0, field_id: 0, field_value: 0, approvalstatus: 0, group_id: -1, optionalservice_id: 0 }] });
-      const back = await detail('Template', parent.id);
-      note(area, 'parent after creation rules', back?.children);
-      if (back) Object.assign(parent, back);
-    }
-    note(area, 'result', { parent: parent.id, children_now: ((parent.children as Row[]) ?? []).map((c) => c.name), linked: linked() });
-    summary.push(linked() ? '✓ child tickets: a way of linking children that Halo keeps was found' : '✗ child tickets: no linking shape kept (see file)');
-  }
+// ---------- 2. child tickets with the real builder (round 5) ----------
+// Round 4 found the way Halo keeps them (children as their own records, then listed by id: rule C1). Now the builder
+// does it end to end on the sample ticket type, and the ticket type is pointed at the new template.
+if (apply && team) {
+  const zt = types.find((t) => String(t.name) === `${SAMPLE} request`);
+  await prove('child tickets', {
+    request: 'Enact learning run 5',
+    steps: [
+      ...(zt
+        ? [{ id: 'zt', object: 'ticket_type' as const, action: 'reuse' as const, match: { name: `${SAMPLE} request` } }]
+        : [{ id: 'src', object: 'ticket_type' as const, action: 'reuse' as const, match: { name: nameOf(ticketType!) } }, { id: 'zt', object: 'ticket_type' as const, action: 'create' as const, name: `${SAMPLE} request`, based_on: nameOf(ticketType!) }]),
+      { id: 'team', object: 'team', action: 'reuse', match: { name: nameOf(team) } },
+      { id: 'kids', object: 'ticket_template', action: 'create', name: `${SAMPLE} children (builder)`, attach_to: 'zt', children: [{ summary: `${SAMPLE} builder child 1`, ticket_type: 'zt', team: 'team' }, { summary: `${SAMPLE} builder child 2`, ticket_type: 'zt' }] },
+    ],
+  }, async (log) => ({
+    template: await detail('Template', idOf(log, 'kids')),
+    ticket_type_link: pick(await detail('TicketType', idOf(log, 'zt')), /template/i),
+  }));
 }
 
 // Actions with a default team or agent (rule O4: Enact-made actions copied one from "Escalated").
